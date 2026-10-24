@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+httpx
+pytest
+pytest-asyncio
+pymongo>=4.9
+dnspython
+cryptography
+itsdangerous
