@@ -1,17 +1,12 @@
 import os
 import urllib.parse
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
-from dotenv import load_dotenv
 import httpx
 from fastapi import HTTPException, status
 from security import decrypt_token
 
-env_path = Path(__file__).resolve().parent / ".env"
-if not env_path.exists():
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+import config  # noqa: F401
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
@@ -388,12 +383,12 @@ def generate_ics_content(
     start_str = start_dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     end_str = end_dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    event_uid = uid or f"{dtstamp}-{title.replace(' ', '_')}@eventplanner"
+    event_uid = uid or f"{dtstamp}-{title.replace(' ', '_')}@timezy"
 
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        "PRODID:-//Event Planner AI//EN",
+        "PRODID:-//Timezy Event Planner//EN",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
         "BEGIN:VEVENT",

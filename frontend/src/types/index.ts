@@ -109,12 +109,19 @@ export interface EventPlan {
   daySchedule?: ScheduleMilestone[];
 }
 
+export type AiSuggestionData = 
+  | BudgetItem 
+  | TimelineTask 
+  | ChecklistItem 
+  | { theme: string } 
+  | Record<string, unknown>;
+
 export interface AiSuggestion {
   id: string;
   type: 'budget' | 'timeline' | 'checklist' | 'theme';
   title: string;
   description: string;
-  data: any;
+  data: AiSuggestionData;
 }
 
 export interface AiMessage {

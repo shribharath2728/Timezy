@@ -1,13 +1,11 @@
 import React from 'react';
-import { Sparkles, ArrowLeft, Sun, Flame, PenTool, Printer } from 'lucide-react';
+import { Sparkles, ArrowLeft, PenTool } from 'lucide-react';
 
 interface TimezyHeaderProps {
   onToggleAi: () => void;
   isAiOpen: boolean;
   isInWorkspace?: boolean;
   onBackToHome?: () => void;
-  savedPlansCount?: number;
-  onOpenSavedPlans?: () => void;
   onOpenScrapbook?: () => void;
 }
 
@@ -16,8 +14,6 @@ export const TimezyHeader: React.FC<TimezyHeaderProps> = ({
   isAiOpen,
   isInWorkspace,
   onBackToHome,
-  savedPlansCount = 0,
-  onOpenSavedPlans,
   onOpenScrapbook,
 }) => {
   return (
@@ -31,6 +27,7 @@ export const TimezyHeader: React.FC<TimezyHeaderProps> = ({
               onClick={onBackToHome}
               className="p-2 rounded-full bg-white text-[#082b03] border border-[#e2ede0] shadow-xs hover:bg-[#f4f8f2] transition-colors"
               title="Return to Home"
+              aria-label="Return to Home"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>

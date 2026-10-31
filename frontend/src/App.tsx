@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { TimezyHeader } from './components/TimezyHeader';
-import { TimezyLandingPage } from './components/TimezyLandingPage';
-import { FlipBookWorkspace } from './components/FlipBookWorkspace';
-import { AiAssistantPanel } from './components/AiAssistantPanel';
-import { MarginaliaDrawer } from './components/MarginaliaDrawer';
-import { FloatingQuillButton } from './components/FloatingQuillButton';
+import {
+  AiAssistantPanel,
+  FlipBookWorkspace,
+  FloatingQuillButton,
+  MarginaliaDrawer,
+  TimezyHeader,
+  TimezyLandingPage,
+} from './components';
 import { BudgetItem, ChecklistItem, EventPlan, TimelineTask } from './types';
 import { storageService } from './services/storageService';
 
@@ -90,8 +92,6 @@ export const App: React.FC = () => {
         isAiOpen={isAiOpen}
         isInWorkspace={!!activePlan}
         onBackToHome={() => setActivePlanId(null)}
-        savedPlansCount={plans.length}
-        onOpenSavedPlans={() => setActivePlanId(null)}
         onOpenScrapbook={() => setIsScrapbookOpen(true)}
       />
 

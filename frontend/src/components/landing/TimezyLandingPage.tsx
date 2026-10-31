@@ -1,23 +1,15 @@
 import React, { useState } from 'react';
-import { 
-  Sparkles, 
-  ArrowRight, 
+import {
+  ArrowRight,
   ChevronLeft,
-  Calendar as CalendarIcon, 
-  MapPin, 
-  Users, 
-  Cake, 
-  HeartHandshake, 
-  Bookmark,
+  Cake,
+  HeartHandshake,
   Sun,
-  Coins,
-  Hourglass,
-  CheckCircle2,
-  Clock
+  Clock,
 } from 'lucide-react';
 import { DateSelector } from './DateSelector';
 import { SampleIllustrationUI } from './SampleIllustrationUI';
-import { EventCategory, EventPlan, FunctionType } from '../types';
+import { EventCategory, EventPlan, FunctionType } from '../../types';
 import { 
   generateInitialBudget, 
   generateInitialChecklist, 
@@ -26,8 +18,8 @@ import {
   generateDaySchedule,
   formatTime12h,
   parseTimeString
-} from '../services/defaultPlanGenerator';
-import { useRealTimeClock } from '../hooks/useRealTimeClock';
+} from '../../services/defaultPlanGenerator';
+import { useRealTimeClock } from '../../hooks/useRealTimeClock';
 
 interface TimezyLandingPageProps {
   onCreatePlan: (plan: EventPlan) => void;
@@ -55,7 +47,7 @@ export const TimezyLandingPage: React.FC<TimezyLandingPageProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(defaultDateStr);
   const [commencementTime, setCommencementTime] = useState<string>('18:30');
   const [selectedCategory, setSelectedCategory] = useState<EventCategory>('birthday');
-  const [functionType, setFunctionType] = useState<FunctionType>('wedding');
+  const [functionType] = useState<FunctionType>('wedding');
 
   // No hardcoded predefined names!
   const [personName, setPersonName] = useState('');

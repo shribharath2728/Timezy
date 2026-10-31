@@ -1,17 +1,12 @@
 import os
-from pathlib import Path
 from typing import Optional, Dict, Any
-from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
-env_path = Path(__file__).resolve().parent / ".env"
-if not env_path.exists():
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+import config
 
-SESSION_SECRET = os.getenv("SESSION_SECRET", "default_dev_session_secret_change_in_production_32b")
-TOKEN_ENC_KEY = os.getenv("TOKEN_ENC_KEY")
+SESSION_SECRET = os.getenv("SESSION_SECRET", config.SESSION_SECRET)
+TOKEN_ENC_KEY = os.getenv("TOKEN_ENC_KEY", config.TOKEN_ENC_KEY)
 
 # Fernet instance for encrypting/decrypting sensitive refresh tokens
 _fernet: Optional[Fernet] = None

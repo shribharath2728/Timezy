@@ -1,15 +1,13 @@
 import json
+import logging
 import os
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
-from dotenv import load_dotenv
 from fastapi import HTTPException
 import httpx
 
-env_path = Path(__file__).resolve().parent / ".env"
-if not env_path.exists():
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+import config  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are an expert event planning and budget assistant.
 Your task is to analyze the event details and classify each of the provided items.
@@ -99,7 +97,7 @@ async def ask_ai(message: str) -> str:
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=502,
-            detail=f"Gemini API returned HTTP {e.response.status_code}: {e.response.text}",
+            detail=f"Gemini API returned HTTP {e.response.status_code}",
         )
     except httpx.RequestError as e:
         raise HTTPException(
@@ -522,8 +520,8 @@ async def analyze_and_plan(
             # Check validity
             if _validate_analysis(result, expected_ids, total):
                 return result
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("analyze_and_plan attempt %s failed: %s", attempt + 1, exc)
 
     raise HTTPException(
         status_code=502,
@@ -555,8 +553,8 @@ async def get_plan(message: str, total: Union[int, float]) -> Dict[str, Any]:
             tot = float(data.get("total", 0))
             if abs((sum(float(i.get("cost", 0)) for i in items) + buf) - tot) <= 0.01 and abs(tot - float(total)) <= 0.01:
                 return data
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("get_plan attempt %s failed: %s", attempt + 1, exc)
 
     raise HTTPException(
         status_code=502,

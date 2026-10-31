@@ -27,14 +27,12 @@ body {
   margin: 0;
   padding: 0;
   background-color: #dcecd2;
-  background-image: 
-    radial-gradient(circle at 50% 0%, rgba(235, 246, 230, 0.6) 0%, rgba(220, 236, 210, 0.94) 70%, rgba(212, 230, 201, 0.98) 100%),
-    url('/diary-bg.jpg');
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(235, 246, 230, 0.6) 0%, rgba(220, 236, 210, 0.94) 70%, rgba(212, 230, 201, 0.98) 100%);
   background-size: cover;
   background-position: center top;
   background-attachment: fixed;
   background-repeat: no-repeat;
-  background-blend-mode: normal, soft-light;
   color: #082b03;
   min-height: 100vh;
 }

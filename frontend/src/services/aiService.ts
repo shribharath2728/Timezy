@@ -1,16 +1,19 @@
 import { AiMessage, AiSuggestion, BudgetItem, ChecklistItem, EventPlan, TimelineTask } from '../types';
-import { isHomeVenue, offsetTime, generateDaySchedule, getTimeOfDayLabel } from './defaultPlanGenerator';
+import { isHomeVenue, offsetTime, generateDaySchedule } from './defaultPlanGenerator';
 
 export async function askAiAssistant(
   prompt: string, 
   plan?: EventPlan | null, 
-  history?: AiMessage[]
+  _history?: AiMessage[]
 ): Promise<AiMessage> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-    const payloadBody: any = {
+    const payloadBody: {
+      message: string;
+      event_details?: Record<string, unknown>;
+    } = {
       message: prompt,
     };
 

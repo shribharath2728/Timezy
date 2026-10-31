@@ -7,7 +7,7 @@ interface MarginaliaDrawerProps {
   planTitle?: string;
 }
 
-const STORAGE_KEY = 'gather_plan_scrapbook_notes';
+const STORAGE_KEY = 'timezy_scrapbook_notes';
 
 const INSPIRATIONAL_QUOTES = [
   "Hospitality is making others feel warmly welcome and celebrated.",

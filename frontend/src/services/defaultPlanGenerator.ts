@@ -706,7 +706,7 @@ export function generateInitialTimeline(
 
 export function generateInitialChecklist(
   category: EventCategory, 
-  functionType: FunctionType | undefined
+  _functionType: FunctionType | undefined
 ): ChecklistItem[] {
   const isBirthday = category === 'birthday';
 

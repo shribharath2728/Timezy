@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Sparkles, Send, Plus, CheckCircle } from 'lucide-react';
-import { AiMessage, AiSuggestion, BudgetItem, ChecklistItem, EventPlan, TimelineTask } from '../types';
-import { askAiAssistant } from '../services/aiService';
+import { AiMessage, AiSuggestion, BudgetItem, ChecklistItem, EventPlan, TimelineTask } from '../../types';
+import { askAiAssistant } from '../../services/aiService';
 
 interface AiAssistantPanelProps {
   isOpen: boolean;
@@ -99,7 +99,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     if (sug.type === 'budget' && onAddBudgetItem) onAddBudgetItem(sug.data as BudgetItem);
     else if (sug.type === 'timeline' && onAddTimelineTask) onAddTimelineTask(sug.data as TimelineTask);
     else if (sug.type === 'checklist' && onAddChecklistItem) onAddChecklistItem(sug.data as ChecklistItem);
-    else if (sug.type === 'theme' && onUpdateTheme) onUpdateTheme(sug.data.theme);
+    else if (sug.type === 'theme' && onUpdateTheme) onUpdateTheme((sug.data as { theme: string }).theme);
     setAddedSuggestionIds((prev) => new Set([...prev, sug.id]));
   };
 

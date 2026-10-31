@@ -1,17 +1,12 @@
 import logging
 import os
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Optional
-from dotenv import load_dotenv
 import httpx
 
-logger = logging.getLogger(__name__)
+import config  # noqa: F401  # load .env once
 
-env_path = Path(__file__).resolve().parent / ".env"
-if not env_path.exists():
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+logger = logging.getLogger(__name__)
 
 BIRTHDAY_WISH_TEMPLATE = """Happy Birthday {name}!
 

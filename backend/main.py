@@ -1,16 +1,16 @@
+import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
-from enum import Enum
-from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from bson import ObjectId
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request, Response, status, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, field_validator
+from fastapi.responses import RedirectResponse
 
+import config
 from db import (
     init_db,
     close_db,
@@ -19,6 +19,7 @@ from db import (
     CATEGORIES,
     PLAN_STATUSES,
 )
+from plan_views import serialize_doc, plan_response, assert_plan_access, owner_query
 from ai import get_plan, analyze_and_plan, ask_ai_chat, generate_dynamic_chat_reply
 from planner import (
     DEFAULT_VENDOR_CHECKLISTS,
@@ -47,19 +48,27 @@ from security import (
     encrypt_token,
     decrypt_token,
     create_session_cookie,
-    decode_session_cookie,
 )
-import secrets
-from fastapi.responses import RedirectResponse
+from deps import (
+    COOKIE_NAME,
+    COOKIE_SECURE,
+    OAUTH_STATE_COOKIE,
+    get_current_user,
+    parse_id,
+    session_cookie_kwargs,
+)
+from schemas import (
+    AiAssistRequest,
+    ItemPatchRequest,
+    PlanCreateRequest,
+    PlanRefineRequest,
+    SessionLoginRequest,
+    WishConsentRequest,
+)
 
+logger = logging.getLogger(__name__)
 
-# Load .env from backend/ or root directory
-env_path = Path(__file__).resolve().parent / ".env"
-if not env_path.exists():
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
-
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", config.FRONTEND_ORIGIN)
 
 
 @asynccontextmanager
@@ -70,20 +79,7 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
-class CategoryEnum(str, Enum):
-    birthday = "birthday"
-    wedding = "wedding"
-    meeting = "meeting"
-    travel = "travel"
-    community = "community"
-
-
-class PlanStatusEnum(str, Enum):
-    draft = "draft"
-    scheduled = "scheduled"
-
-
-app = FastAPI(title="Event Planner & Budget API", lifespan=lifespan)
+app = FastAPI(title="Timezy Event Planner API", lifespan=lifespan)
 
 # CORS strictly limited to FRONTEND_ORIGIN with credentials
 allowed_origins = [origin.strip() for origin in FRONTEND_ORIGIN.split(",") if origin.strip()]
@@ -108,135 +104,6 @@ def favicon():
 
 
 # ---------------------------------------------------------------------------
-# Session & Auth Helpers (Signed httpOnly Cookie Sessions)
-# ---------------------------------------------------------------------------
-
-COOKIE_NAME = "session_id"
-
-
-async def get_current_user(request: Request) -> Optional[Dict[str, Any]]:
-    """Extracts and verifies signed httpOnly session cookie to retrieve user."""
-    cookie_val = request.cookies.get(COOKIE_NAME)
-    if not cookie_val:
-        return None
-
-    session_data = decode_session_cookie(cookie_val)
-    if not session_data or "user_id" not in session_data:
-        return None
-
-    users_col = get_users_collection()
-    try:
-        user_id = ObjectId(session_data["user_id"])
-        user = await users_col.find_one({"_id": user_id})
-        return user
-    except Exception:
-        return None
-
-
-def serialize_doc(doc: Dict[str, Any], user_tz: Optional[str] = None) -> Dict[str, Any]:
-    """Helper to convert MongoDB _id and UTC datetimes to JSON-serializable types."""
-    if not doc:
-        return doc
-    res = dict(doc)
-    doc_id = res.pop("_id", None)
-    if doc_id is not None:
-        res["id"] = str(doc_id)
-        res["_id"] = str(doc_id)
-
-    tz = user_tz or res.get("tz") or res.get("user_timezone", DEFAULT_TIMEZONE)
-
-    for k, v in list(res.items()):
-        if isinstance(v, ObjectId):
-            res[k] = str(v)
-        elif isinstance(v, datetime):
-            res[k] = format_for_display(v, tz)
-
-    return res
-
-
-def parse_id(id_val: str) -> Any:
-    """Supports both MongoDB ObjectId and string IDs."""
-    try:
-        return ObjectId(id_val)
-    except Exception:
-        return id_val
-
-
-# ---------------------------------------------------------------------------
-# Models
-# ---------------------------------------------------------------------------
-
-class WishConfig(BaseModel):
-    name: Optional[str] = None
-    email: Optional[str] = None
-    consent: Optional[bool] = False
-    sent: Optional[bool] = False
-
-
-class WishConsentRequest(BaseModel):
-    consent: Optional[bool] = True
-    email: Optional[str] = None
-    name: Optional[str] = None
-
-
-class PlanCreateRequest(BaseModel):
-    title: str = Field(..., min_length=1)
-    category: CategoryEnum
-    event_start: str = Field(..., description="Event start datetime (ISO string)")
-    budget: float = Field(..., gt=0)
-    tz: Optional[str] = Field(default=DEFAULT_TIMEZONE, description="User IANA timezone")
-    guests: Optional[int] = Field(default=0, ge=0)
-    location: Optional[str] = None
-    notes: Optional[str] = None
-    status: Optional[PlanStatusEnum] = PlanStatusEnum.draft
-    wish: Optional[WishConfig] = None
-    user_items: Optional[List[Dict[str, Any]]] = None
-
-    @field_validator("event_start")
-    @classmethod
-    def validate_date_format(cls, v: str) -> str:
-        try:
-            try:
-                datetime.fromisoformat(v)
-            except ValueError:
-                datetime.strptime(v, "%Y-%m-%d")
-            return v
-        except Exception:
-            raise ValueError(
-                "event_start must be a valid ISO format string (e.g. 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM:SS')"
-            )
-
-
-class ItemPatchRequest(BaseModel):
-    verdict: Optional[str] = None
-    keep: Optional[bool] = None  # User override ("keep anyway")
-    item: Optional[str] = None   # Edit text
-    title: Optional[str] = None  # Alias for edit text
-    priority: Optional[str] = None  # P1-P4
-    cost: Optional[float] = None
-    lead_days: Optional[int] = None
-    done: Optional[bool] = None
-
-
-class PlanRefineRequest(BaseModel):
-    change: str = Field(..., min_length=1)
-    new_total: Optional[float] = Field(None, gt=0)
-    new_budget: Optional[float] = Field(None, gt=0)
-
-
-class AiAssistRequest(BaseModel):
-    message: str = Field(..., min_length=1)
-    event_details: Optional[Dict[str, Any]] = None
-
-
-class SessionLoginRequest(BaseModel):
-    google_id: str
-    email: str
-    tz: Optional[str] = DEFAULT_TIMEZONE
-    refresh_token: Optional[str] = None
-
-
-# ---------------------------------------------------------------------------
 # Auth / Google OAuth Routes (Authorization Code Flow)
 # ---------------------------------------------------------------------------
 
@@ -248,15 +115,36 @@ def auth_login(redirect_url: Optional[str] = Query(None)):
     """
     state_token = secrets.token_urlsafe(16)
     auth_url = get_oauth_login_url(state=state_token)
-    return RedirectResponse(url=auth_url)
+    redirect = RedirectResponse(url=auth_url)
+    redirect.set_cookie(
+        key=OAUTH_STATE_COOKIE,
+        value=state_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        max_age=600,
+    )
+    return redirect
 
 
 @app.get("/auth/callback")
-async def auth_callback(code: str = Query(...), state: Optional[str] = Query(None), response: Response = None):
+async def auth_callback(
+    request: Request,
+    code: str = Query(...),
+    state: Optional[str] = Query(None),
+    response: Response = None,
+):
     """Exchanges authorization code for tokens, encrypts refresh_token with Fernet,
 
     saves user in users collection, and sets signed httpOnly cookie.
     """
+    cookie_state = request.cookies.get(OAUTH_STATE_COOKIE)
+    if cookie_state and state and cookie_state != state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OAuth state",
+        )
+
     token_data = await exchange_code_for_tokens(code)
     access_token = token_data.get("access_token")
     refresh_token = token_data.get("refresh_token")
@@ -314,11 +202,9 @@ async def auth_callback(code: str = Query(...), state: Optional[str] = Query(Non
     res_redirect.set_cookie(
         key=COOKIE_NAME,
         value=cookie_token,
-        httponly=True,
-        secure=False,
-        samesite="lax",
-        max_age=14 * 86400,
+        **session_cookie_kwargs(),
     )
+    res_redirect.delete_cookie(OAUTH_STATE_COOKIE)
     return res_redirect
 
 
@@ -357,10 +243,7 @@ async def create_session(payload: SessionLoginRequest, response: Response):
     response.set_cookie(
         key=COOKIE_NAME,
         value=cookie_token,
-        httponly=True,
-        secure=False,
-        samesite="lax",
-        max_age=14 * 86400,
+        **session_cookie_kwargs(),
     )
     return {"status": "ok", "user_id": user_id, "email": payload.email}
 

@@ -1,18 +1,12 @@
 import os
 import asyncio
-from pathlib import Path
 from typing import Optional, Dict, Any
-from dotenv import load_dotenv
 from pymongo import AsyncMongoClient, ASCENDING, IndexModel
 
-# Look for .env in backend/ or root directory
-env_path = Path(__file__).resolve().parent / ".env"
-if not env_path.exists():
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+import config
 
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-DB_NAME = os.getenv("DB_NAME", "event_planner_db")
+MONGODB_URI = os.getenv("MONGODB_URI", config.MONGODB_URI)
+DB_NAME = os.getenv("DB_NAME", config.DB_NAME)
 
 CATEGORIES = ("birthday", "wedding", "meeting", "travel", "community")
 PLAN_STATUSES = ("draft", "scheduled")
@@ -84,6 +78,14 @@ async def init_db():
     await plans_col.create_index(
         [("status", ASCENDING)],
         name="plans_status_idx",
+    )
+    await plans_col.create_index(
+        [("wish.consent", ASCENDING), ("wish.sent", ASCENDING)],
+        name="plans_wish_consent_sent_idx",
+    )
+    await plans_col.create_index(
+        [("created_at", ASCENDING)],
+        name="plans_created_at_idx",
     )
 
 
