@@ -138,3 +138,4 @@ async def test_calendar_ics_download_endpoint():
             assert "Gala Anniversary Dinner" in content
     finally:
         await plans_col.delete_one({"_id": insert_res.inserted_id})
+
