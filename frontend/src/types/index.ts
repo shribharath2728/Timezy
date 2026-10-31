@@ -77,6 +77,16 @@ export interface Vendor {
   notes?: string;
 }
 
+export interface ScheduleMilestone {
+  id: string;
+  time: string;
+  title: string;
+  duration: string;
+  bg?: string;
+  border?: string;
+  avatar?: string;
+}
+
 export interface EventPlan {
   id: string;
   title: string;
@@ -96,6 +106,7 @@ export interface EventPlan {
   timelineTasks: TimelineTask[];
   checklistItems: ChecklistItem[];
   vendors: Vendor[];
+  daySchedule?: ScheduleMilestone[];
 }
 
 export interface AiSuggestion {

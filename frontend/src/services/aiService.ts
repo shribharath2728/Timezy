@@ -1,5 +1,5 @@
 import { AiMessage, AiSuggestion, BudgetItem, ChecklistItem, EventPlan, TimelineTask } from '../types';
-import { isHomeVenue, offsetTime } from './defaultPlanGenerator';
+import { isHomeVenue, offsetTime, generateDaySchedule, getTimeOfDayLabel } from './defaultPlanGenerator';
 
 export async function askAiAssistant(
   prompt: string, 
@@ -330,31 +330,30 @@ function generateEventAdvice(prompt: string, plan?: EventPlan | null): AiMessage
       `• **${offsetTime(cTime, 75)} to ${offsetTime(cTime, 90)}:** Open the full dinner buffet banquet after the main ceremony / cake cutting.\n` +
       `• **${offsetTime(cTime, 120)} onwards:** Keep warm dessert counters open for departing guests.`;
   }
-  // Schedule & Timeline
+  // Schedule & Timeline (Contextual & category-driven)
   else if (p.includes('schedule') || p.includes('timeline') || p.includes('time') || p.includes('slot') || p.includes('agenda') || p.includes('when')) {
     const cTime = plan.commencementTime || '18:30';
-    replyText = `### Suggested Schedule for ${plan.title}\n` +
+    const dynamicMilestones = generateDaySchedule(plan.category, plan.functionType, cTime, plan.venue);
+    const flowLines = dynamicMilestones.map(m => `• **${m.time}**: ${m.title} *(${m.duration})*`).join('\n');
+
+    replyText = `### Tailored Day Schedule for ${plan.title}\n` +
       `*Event Date: **${plan.eventDate}** (${daysToGo} days to go)*\n` +
-      `*Commencement: **${plan.commencementTime || '06:30 PM'}***\n\n` +
-      `**Celebration Day Flow:**\n` +
-      `• **${offsetTime(cTime, -180)}**: Venue handover & power backup verification.\n` +
-      `• **${offsetTime(cTime, -120)}**: Florals and stage decoration installation.\n` +
-      `• **${offsetTime(cTime, -60)}**: Sound check, microphone balance & styling completion.\n` +
-      `• **${offsetTime(cTime, -30)}**: Refreshment counter readiness & final walkthrough.\n` +
-      `• **${offsetTime(cTime, 0)}**: Guest arrival commencement, welcome drinks & background music.\n` +
-      `• **${offsetTime(cTime, 45)}**: Main ceremony / cake cutting & photo sessions.\n` +
-      `• **${offsetTime(cTime, 105)}**: Dinner buffet banquet & celebration dance floor!`;
+      `*Commencement: **${plan.commencementTime || '06:30 PM'}***\n` +
+      `*Venue: **${plan.venue}***\n\n` +
+      `**Run of Show & Day Milestones:**\n` +
+      `${flowLines}\n\n` +
+      `Each milestone is tailored to your ${plan.category === 'birthday' ? 'birthday celebration' : (plan.functionType || 'event')} and timed directly from your commencement time.`;
 
     suggestions.push({
       id: `sug-${Date.now()}-t1`,
       type: 'timeline',
-      title: 'Add "Venue & Sound Check" milestone',
-      description: `Pre-event technical rehearsal 1 hour prior to ${plan.commencementTime || '06:30 PM'}.`,
+      title: `Adopt tailored day schedule`,
+      description: `Run-of-show synced to your ${plan.commencementTime || '06:30 PM'} commencement.`,
       data: {
         id: `sug-t-${Date.now()}`,
-        name: 'Verify microphone levels, ambient lights and stage backdrop',
+        name: `Review run-of-show with coordinator and vendors`,
         phase: 'day_of',
-        phaseLabel: 'Celebration Day (Setup)',
+        phaseLabel: 'Celebration Day (Coordination)',
         recommendedDate: plan.eventDate,
         timeSlot: offsetTime(cTime, -60),
         priority: 'P1',

@@ -3,6 +3,7 @@ import {
   ChecklistItem, 
   EventCategory, 
   FunctionType, 
+  ScheduleMilestone,
   TimelineTask, 
   Vendor 
 } from '../types';
@@ -340,6 +341,228 @@ export function offsetTime(timeStr: string | undefined, offsetMinutes: number): 
   const newH = Math.floor(totalMin / 60);
   const newM = ((totalMin % 60) + 60) % 60;
   return formatTime12h(newH, newM);
+}
+
+export function getTimeOfDayLabel(hours: number): string {
+  const norm = ((hours % 24) + 24) % 24;
+  if (norm < 12) return 'Morning';
+  if (norm < 17) return 'Afternoon';
+  return 'Evening';
+}
+
+export function generateDaySchedule(
+  category: EventCategory,
+  functionType: FunctionType | undefined,
+  commencementTime?: string,
+  venue?: string
+): ScheduleMilestone[] {
+  const cTime = commencementTime || '18:30';
+  const { hours, minutes } = parseTimeString(cTime);
+  const totalMinutes = hours * 60 + minutes;
+  const setupHours = Math.floor((totalMinutes - 90) / 60);
+  const setupTimeOfDay = getTimeOfDayLabel(setupHours);
+  const isHome = isHomeVenue(venue);
+
+  if (category === 'birthday') {
+    return [
+      {
+        id: 'sch-1',
+        time: offsetTime(cTime, -90),
+        title: `${setupTimeOfDay} ${isHome ? 'Home & Balloon Styling Setup' : 'Venue Setup & Balloon Arch'}`,
+        duration: `${offsetTime(cTime, -90)} - ${offsetTime(cTime, -45)}`,
+        bg: 'bg-[#faedf2]',
+        border: 'border-[#f6d7e2]',
+        avatar: '🎈',
+      },
+      {
+        id: 'sch-2',
+        time: offsetTime(cTime, -45),
+        title: 'Custom Cake Delivery & Welcome Sips Readiness',
+        duration: `${offsetTime(cTime, -45)} - ${offsetTime(cTime, 0)}`,
+        bg: 'bg-[#faf3e3]',
+        border: 'border-[#f5e4bd]',
+        avatar: '🎂',
+      },
+      {
+        id: 'sch-3',
+        time: offsetTime(cTime, 0),
+        title: 'Guest Arrival, Welcome Drinks & Photo Booth',
+        duration: `${offsetTime(cTime, 0)} - ${offsetTime(cTime, 45)}`,
+        bg: 'bg-[#eaf5e6]',
+        border: 'border-[#d6ebd0]',
+        avatar: '📸',
+      },
+      {
+        id: 'sch-4',
+        time: offsetTime(cTime, 45),
+        title: 'Cake Cutting Ceremony, Games & Birthday Cheers',
+        duration: `${offsetTime(cTime, 45)} - ${offsetTime(cTime, 90)}`,
+        bg: 'bg-[#eef5fa]',
+        border: 'border-[#d6e7f5]',
+        avatar: '✨',
+      },
+      {
+        id: 'sch-5',
+        time: offsetTime(cTime, 90),
+        title: 'Dinner Buffet / Party Feast & Return Favors',
+        duration: `${offsetTime(cTime, 90)} - ${offsetTime(cTime, 150)}`,
+        bg: 'bg-[#fbf5e6]',
+        border: 'border-[#ebdcb8]',
+        avatar: '🎁',
+      },
+    ];
+  }
+
+  // Puja Ceremony
+  if (functionType === 'puja_ceremony') {
+    return [
+      {
+        id: 'sch-1',
+        time: offsetTime(cTime, -90),
+        title: `${setupTimeOfDay} Mandap & Sacred Samagri Arrangement`,
+        duration: `${offsetTime(cTime, -90)} - ${offsetTime(cTime, -30)}`,
+        bg: 'bg-[#faf3e3]',
+        border: 'border-[#f5e4bd]',
+        avatar: '🪔',
+      },
+      {
+        id: 'sch-2',
+        time: offsetTime(cTime, -30),
+        title: 'Priest Arrival & Floral Altar Adornment',
+        duration: `${offsetTime(cTime, -30)} - ${offsetTime(cTime, 0)}`,
+        bg: 'bg-[#faedf2]',
+        border: 'border-[#f6d7e2]',
+        avatar: '🌸',
+      },
+      {
+        id: 'sch-3',
+        time: offsetTime(cTime, 0),
+        title: 'Devotee Arrival & Sankalpam Commencement',
+        duration: `${offsetTime(cTime, 0)} - ${offsetTime(cTime, 45)}`,
+        bg: 'bg-[#eaf5e6]',
+        border: 'border-[#d6ebd0]',
+        avatar: '🙏',
+      },
+      {
+        id: 'sch-4',
+        time: offsetTime(cTime, 45),
+        title: 'Main Puja Rituals, Havan & Maha Aarti',
+        duration: `${offsetTime(cTime, 45)} - ${offsetTime(cTime, 105)}`,
+        bg: 'bg-[#eef5fa]',
+        border: 'border-[#d6e7f5]',
+        avatar: '✨',
+      },
+      {
+        id: 'sch-5',
+        time: offsetTime(cTime, 105),
+        title: 'Prasadam Distribution & Community Feast',
+        duration: `${offsetTime(cTime, 105)} - ${offsetTime(cTime, 165)}`,
+        bg: 'bg-[#fbf5e6]',
+        border: 'border-[#ebdcb8]',
+        avatar: '🍲',
+      },
+    ];
+  }
+
+  // Weddings & Grand Galas
+  if (functionType === 'wedding' || functionType === 'reception' || functionType === 'engagement') {
+    return [
+      {
+        id: 'sch-1',
+        time: offsetTime(cTime, -90),
+        title: `${setupTimeOfDay} Stage Floral Walkthrough & Sound Check`,
+        duration: `${offsetTime(cTime, -90)} - ${offsetTime(cTime, -45)}`,
+        bg: 'bg-[#faedf2]',
+        border: 'border-[#f6d7e2]',
+        avatar: '🌸',
+      },
+      {
+        id: 'sch-2',
+        time: offsetTime(cTime, -45),
+        title: 'Decorator Lighting Finish & Couple Readiness',
+        duration: `${offsetTime(cTime, -45)} - ${offsetTime(cTime, 0)}`,
+        bg: 'bg-[#faf3e3]',
+        border: 'border-[#f5e4bd]',
+        avatar: '✨',
+      },
+      {
+        id: 'sch-3',
+        time: offsetTime(cTime, 0),
+        title: 'Grand Guest Arrival & Welcome Refreshment Service',
+        duration: `${offsetTime(cTime, 0)} - ${offsetTime(cTime, 45)}`,
+        bg: 'bg-[#eaf5e6]',
+        border: 'border-[#d6ebd0]',
+        avatar: '🤝',
+      },
+      {
+        id: 'sch-4',
+        time: offsetTime(cTime, 45),
+        title: 'Main Ceremony / Stage Honors & Photography',
+        duration: `${offsetTime(cTime, 45)} - ${offsetTime(cTime, 105)}`,
+        bg: 'bg-[#eef5fa]',
+        border: 'border-[#d6e7f5]',
+        avatar: '💍',
+      },
+      {
+        id: 'sch-5',
+        time: offsetTime(cTime, 105),
+        title: 'Grand Banquet Dinner & Celebration Music',
+        duration: `${offsetTime(cTime, 105)} - ${offsetTime(cTime, 165)}`,
+        bg: 'bg-[#fbf5e6]',
+        border: 'border-[#ebdcb8]',
+        avatar: '🍽️',
+      },
+    ];
+  }
+
+  // Anniversary & Family Celebrations
+  return [
+    {
+      id: 'sch-1',
+      time: offsetTime(cTime, -90),
+      title: `${setupTimeOfDay} Venue Walkthrough & Seating Decor`,
+      duration: `${offsetTime(cTime, -90)} - ${offsetTime(cTime, -45)}`,
+      bg: 'bg-[#faedf2]',
+      border: 'border-[#f6d7e2]',
+      avatar: '🌸',
+    },
+    {
+      id: 'sch-2',
+      time: offsetTime(cTime, -30),
+      title: 'Audio-Visual Memory Slideshow & Music Test',
+      duration: `${offsetTime(cTime, -30)} - ${offsetTime(cTime, 0)}`,
+      bg: 'bg-[#faf3e3]',
+      border: 'border-[#f5e4bd]',
+      avatar: '✨',
+    },
+    {
+      id: 'sch-3',
+      time: offsetTime(cTime, 0),
+      title: 'Guest Welcome & Refreshment Social',
+      duration: `${offsetTime(cTime, 0)} - ${offsetTime(cTime, 45)}`,
+      bg: 'bg-[#eaf5e6]',
+      border: 'border-[#d6ebd0]',
+      avatar: '🥂',
+    },
+    {
+      id: 'sch-4',
+      time: offsetTime(cTime, 45),
+      title: 'Family Speeches, Felicitation & Toast',
+      duration: `${offsetTime(cTime, 45)} - ${offsetTime(cTime, 100)}`,
+      bg: 'bg-[#eef5fa]',
+      border: 'border-[#d6e7f5]',
+      avatar: '🌟',
+    },
+    {
+      id: 'sch-5',
+      time: offsetTime(cTime, 100),
+      title: 'Banquet Feast & Musical Social Hour',
+      duration: `${offsetTime(cTime, 100)} - ${offsetTime(cTime, 160)}`,
+      bg: 'bg-[#fbf5e6]',
+      border: 'border-[#ebdcb8]',
+      avatar: '🍽️',
+    },
+  ];
 }
 
 export function generateInitialTimeline(

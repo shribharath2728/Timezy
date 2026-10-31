@@ -23,6 +23,7 @@ import {
   generateInitialChecklist, 
   generateInitialTimeline, 
   generateInitialVendors,
+  generateDaySchedule,
   formatTime12h,
   parseTimeString
 } from '../services/defaultPlanGenerator';
@@ -95,6 +96,7 @@ export const TimezyLandingPage: React.FC<TimezyLandingPageProps> = ({
     const timelineTasks = generateInitialTimeline(selectedCategory, functionType, selectedDate, commencementTime);
     const checklistItems = generateInitialChecklist(selectedCategory, functionType);
     const vendors = generateInitialVendors(selectedCategory, functionType, numBudget, venue.trim());
+    const daySchedule = generateDaySchedule(selectedCategory, functionType, displayCommencement, venue.trim());
 
     const newPlan: EventPlan = {
       id: `plan-${Date.now()}`,
@@ -114,6 +116,7 @@ export const TimezyLandingPage: React.FC<TimezyLandingPageProps> = ({
       timelineTasks,
       checklistItems,
       vendors,
+      daySchedule,
     };
 
     onCreatePlan(newPlan);

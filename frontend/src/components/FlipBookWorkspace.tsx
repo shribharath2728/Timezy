@@ -14,11 +14,13 @@ import {
   Sun, 
   Bookmark,
   Coins,
-  MapPin
+  MapPin,
+  Trash2,
+  X
 } from 'lucide-react';
-import { EventPlan, BudgetItem, ChecklistItem } from '../types';
+import { EventPlan, BudgetItem, ChecklistItem, ScheduleMilestone } from '../types';
 import { useRealTimeClock } from '../hooks/useRealTimeClock';
-import { offsetTime } from '../services/defaultPlanGenerator';
+import { offsetTime, generateDaySchedule } from '../services/defaultPlanGenerator';
 
 interface FlipBookWorkspaceProps {
   plan: EventPlan;
@@ -229,11 +231,12 @@ const PageSummary = React.forwardRef<HTMLDivElement, { plan: EventPlan; onNext: 
               </span>
             </div>
 
-            {/* Custom stylized bars matching screenshot */}
+            {/* Custom stylized bars matching actual event day */}
             <div className="h-16 flex items-end justify-between gap-1.5 pt-2">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => {
                 const heights = ['h-6', 'h-9', 'h-8', 'h-14', 'h-12', 'h-7', 'h-5'];
-                const isSelected = d === 'Wed';
+                const eventDayIndex = new Date(props.plan.eventDate + 'T00:00:00').getDay();
+                const isSelected = i === (isNaN(eventDayIndex) ? 3 : eventDayIndex);
                 return (
                   <div key={d} className="flex-1 flex flex-col items-center gap-1">
                     <div className={`w-full rounded-full transition-all ${
@@ -401,7 +404,7 @@ const PageBudget = React.forwardRef<HTMLDivElement, {
 );
 PageBudget.displayName = 'PageBudget';
 
-// PAGE 3: Daily Planner & Calendar (Exact Match to Right Phone in Reference Design)
+// PAGE 3: Daily Planner & Calendar (Dynamic, Context-Aware & Editable)
 const PageCalendar = React.forwardRef<HTMLDivElement, { 
   plan: EventPlan; 
   onPrev: () => void; 
@@ -409,52 +412,72 @@ const PageCalendar = React.forwardRef<HTMLDivElement, {
   onUpdatePlan: (plan: EventPlan) => void;
 }>(
   (props, ref) => {
-    const days = [
-      { d: 'Sun', n: 15 },
-      { d: 'Mon', n: 16 },
-      { d: 'Tue', n: 17 },
-      { d: 'Wed', n: 18, active: true },
-      { d: 'Thu', n: 20 },
-      { d: 'Fri', n: 21 },
-      { d: 'Sat', n: 22 },
-    ];
+    // Dynamic 7 days of the week surrounding or containing the selected event date
+    const eventDateObj = new Date(props.plan.eventDate + 'T00:00:00');
+    const dayOfWeek = isNaN(eventDateObj.getTime()) ? 3 : eventDateObj.getDay(); // 0 is Sunday
+    const sundayDate = new Date(eventDateObj);
+    sundayDate.setDate(eventDateObj.getDate() - dayOfWeek);
 
-    // Dynamic schedule calculated relative to the event's commencement time
-    const cTime = props.plan.commencementTime || '18:30';
-    const scheduleItems = [
-      {
-        time: offsetTime(cTime, -90),
-        title: 'Morning Venue Walkthrough & Setup',
-        duration: `${offsetTime(cTime, -90)} - ${offsetTime(cTime, -45)}`,
-        bg: 'bg-[#faedf2]',
-        border: 'border-[#f6d7e2]',
-        avatar: '🌸',
-      },
-      {
-        time: offsetTime(cTime, -30),
-        title: 'Decorator & Stage Floral Delivery',
-        duration: `${offsetTime(cTime, -30)} - ${offsetTime(cTime, 0)}`,
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, index) => {
+      const currentDay = new Date(sundayDate);
+      currentDay.setDate(sundayDate.getDate() + index);
+      const curIso = currentDay.toISOString().split('T')[0];
+      return {
+        d,
+        n: currentDay.getDate(),
+        dateStr: curIso,
+        active: curIso === props.plan.eventDate,
+      };
+    });
+
+    // Dynamic schedule calculated contextually from event category, time & venue
+    const initialSchedule = (props.plan.daySchedule && props.plan.daySchedule.length > 0)
+      ? props.plan.daySchedule
+      : generateDaySchedule(props.plan.category, props.plan.functionType, props.plan.commencementTime, props.plan.venue);
+
+    const [milestones, setMilestones] = useState<ScheduleMilestone[]>(initialSchedule);
+    const [showAdd, setShowAdd] = useState(false);
+    const [newTitle, setNewTitle] = useState('');
+    const [newTime, setNewTime] = useState('');
+    const [newDuration, setNewDuration] = useState('');
+
+    React.useEffect(() => {
+      if (props.plan.daySchedule && props.plan.daySchedule.length > 0) {
+        setMilestones(props.plan.daySchedule);
+      } else {
+        const generated = generateDaySchedule(props.plan.category, props.plan.functionType, props.plan.commencementTime, props.plan.venue);
+        setMilestones(generated);
+      }
+    }, [props.plan.id, props.plan.category, props.plan.functionType, props.plan.commencementTime, props.plan.venue]);
+
+    const handleAddMilestone = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newTitle.trim()) return;
+      const t = newTime.trim() || props.plan.commencementTime || '06:30 PM';
+      const dur = newDuration.trim() || `${t} - 45 mins`;
+      const newItem: ScheduleMilestone = {
+        id: `ms-${Date.now()}`,
+        time: t,
+        title: newTitle.trim(),
+        duration: dur,
         bg: 'bg-[#faf3e3]',
         border: 'border-[#f5e4bd]',
         avatar: '✨',
-      },
-      {
-        time: offsetTime(cTime, 0),
-        title: 'Guest Arrival & Welcome Commencement',
-        duration: `${offsetTime(cTime, 0)} - ${offsetTime(cTime, 45)}`,
-        bg: 'bg-[#eaf5e6]',
-        border: 'border-[#d6ebd0]',
-        avatar: '🤝',
-      },
-      {
-        time: offsetTime(cTime, 60),
-        title: 'Main Ceremony & Banquet Dinner',
-        duration: `${offsetTime(cTime, 60)} - ${offsetTime(cTime, 120)}`,
-        bg: 'bg-[#eef5fa]',
-        border: 'border-[#d6e7f5]',
-        avatar: '☕',
-      },
-    ];
+      };
+      const updated = [...milestones, newItem];
+      setMilestones(updated);
+      props.onUpdatePlan({ ...props.plan, daySchedule: updated });
+      setNewTitle('');
+      setNewTime('');
+      setNewDuration('');
+      setShowAdd(false);
+    };
+
+    const handleDeleteMilestone = (id: string) => {
+      const updated = milestones.filter(m => m.id !== id);
+      setMilestones(updated);
+      props.onUpdatePlan({ ...props.plan, daySchedule: updated });
+    };
 
     return (
       <div ref={ref} className="page-container relative p-5 sm:p-6 pb-8 flex flex-col justify-between bg-[#fbfdfa] border-r border-[#e0ece0] text-[#082b03]">
@@ -476,14 +499,14 @@ const PageCalendar = React.forwardRef<HTMLDivElement, {
             </h2>
           </div>
 
-          {/* Weekday Strip - Exact match to image */}
+          {/* Dynamic Weekday Strip */}
           <div className="flex items-center justify-between bg-[#f4f8f2] p-2.5 rounded-2xl border border-[#e0ece0] mb-5">
             {days.map((item) => (
               <div 
                 key={item.d} 
                 className={`flex flex-col items-center py-1.5 px-2 rounded-xl text-center transition-all ${
                   item.active 
-                    ? 'bg-[#082b03] text-white shadow-sm font-bold' 
+                    ? 'bg-[#082b03] text-white shadow-sm font-bold scale-105' 
                     : 'text-[#5e7264]'
                 }`}
               >
@@ -496,23 +519,85 @@ const PageCalendar = React.forwardRef<HTMLDivElement, {
           {/* Schedule list with colored pills */}
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-[#082b03]">Day Schedule</span>
-            <span className="text-[10px] text-[#5e7264] font-mono">4 Milestones</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-[#5e7264] font-mono">{milestones.length} Milestones</span>
+              <button
+                type="button"
+                onClick={() => setShowAdd(!showAdd)}
+                className="text-[10px] font-bold text-[#082b03] bg-[#eaf3e7] hover:bg-[#d6ebd0] px-2 py-0.5 rounded-full border border-[#bad4b6] flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <Plus className="w-2.5 h-2.5" />
+                <span>Add</span>
+              </button>
+            </div>
           </div>
 
+          {/* Add Milestone Form */}
+          {showAdd && (
+            <form onSubmit={handleAddMilestone} className="p-3 mb-3 rounded-2xl bg-[#f4f8f2] border border-[#d6ebd0] text-xs space-y-2 animate-fade-in">
+              <div className="flex items-center justify-between font-bold text-[#082b03]">
+                <span>Add New Milestone</span>
+                <button type="button" onClick={() => setShowAdd(false)} className="text-[#5e7264] hover:text-[#082b03]">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <input
+                type="text"
+                placeholder="Milestone title (e.g., Cake Cutting, Sound Check)"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-lg border border-[#bad4b6] bg-white text-xs outline-none focus:border-[#082b03]"
+                required
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="Start Time (e.g., 07:00 PM)"
+                  value={newTime}
+                  onChange={(e) => setNewTime(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg border border-[#bad4b6] bg-white text-xs outline-none focus:border-[#082b03]"
+                />
+                <input
+                  type="text"
+                  placeholder="Duration (e.g., 07:00 PM - 07:45 PM)"
+                  value={newDuration}
+                  onChange={(e) => setNewDuration(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg border border-[#bad4b6] bg-white text-xs outline-none focus:border-[#082b03]"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" onClick={() => setShowAdd(false)} className="px-2.5 py-1 rounded-md text-[#5e7264] hover:bg-gray-100">
+                  Cancel
+                </button>
+                <button type="submit" className="px-3 py-1 rounded-md bg-[#082b03] text-white font-semibold">
+                  Save Milestone
+                </button>
+              </div>
+            </form>
+          )}
+
           <div className="space-y-3">
-            {scheduleItems.map((sch) => (
-              <div key={sch.title} className="flex items-start gap-3">
+            {milestones.map((sch) => (
+              <div key={sch.id || sch.title} className="group flex items-start gap-3">
                 <span className="text-[10px] font-mono text-[#5e7264] w-14 shrink-0 pt-2">
                   {sch.time}
                 </span>
-                <div className={`flex-1 p-3 rounded-2xl border ${sch.bg} ${sch.border} flex items-center justify-between`}>
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-base select-none">{sch.avatar}</span>
-                    <div>
-                      <span className="text-xs font-bold text-[#082b03] block leading-tight">{sch.title}</span>
-                      <span className="text-[10px] text-[#5e7264] font-mono">{sch.duration}</span>
+                <div className={`flex-1 p-3 rounded-2xl border ${sch.bg || 'bg-[#faf3e3]'} ${sch.border || 'border-[#f5e4bd]'} flex items-center justify-between transition-all hover:shadow-xs`}>
+                  <div className="flex items-center gap-2.5 min-w-0 pr-1">
+                    <span className="text-base select-none shrink-0">{sch.avatar || '✨'}</span>
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-[#082b03] block leading-tight truncate">{sch.title}</span>
+                      <span className="text-[10px] text-[#5e7264] font-mono block mt-0.5">{sch.duration}</span>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMilestone(sch.id)}
+                    title="Remove milestone"
+                    className="opacity-0 group-hover:opacity-100 p-1 text-[#5e7264] hover:text-red-600 transition-opacity shrink-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -521,18 +606,18 @@ const PageCalendar = React.forwardRef<HTMLDivElement, {
 
         {/* Flip Footer */}
         <div className="pt-3 border-t border-[#e0ece0] flex items-center justify-between text-xs text-[#5e7264] pr-12">
-          <button type="button" onClick={props.onPrev} className="text-[#5e7264] hover:text-[#082b03] flex items-center gap-1">
+          <button type="button" onClick={props.onPrev} className="text-[#5e7264] hover:text-[#082b03] flex items-center gap-1 cursor-pointer">
             <ChevronLeft className="w-3.5 h-3.5" />
             <span>Budget</span>
           </button>
           <span className="font-medium">Calendar</span>
-          <button type="button" onClick={props.onNext} className="text-[#082b03] font-bold flex items-center gap-1 hover:underline">
+          <button type="button" onClick={props.onNext} className="text-[#082b03] font-bold flex items-center gap-1 hover:underline cursor-pointer">
             <span>Checklist</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* 3D Corner Curl Affordance matching Image 2 */}
+        {/* 3D Corner Curl Affordance */}
         <PageCornerCurl onClick={props.onNext} />
       </div>
     );
