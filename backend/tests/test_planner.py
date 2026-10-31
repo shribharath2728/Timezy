@@ -748,5 +748,101 @@ async def test_wish_consent_and_internal_tick():
             mock_wish.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_ask_ai_gemini_endpoint_and_structure():
+    """Verify ask_ai calls Gemini endpoint with Gemini request structure and parses Gemini response."""
+    import httpx
+
+    gemini_response_body = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "text": '{"items": [{"id": "1", "item": "Cake", "cost": 100}], "buffer": 0, "total": 100, "ideas": []}'
+                        }
+                    ],
+                    "role": "model",
+                },
+                "finishReason": "STOP",
+            }
+        ]
+    }
+
+    mock_response = httpx.Response(
+        status_code=200,
+        json=gemini_response_body,
+        request=httpx.Request("POST", "https://test.url"),
+    )
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "test_gemini_key", "GEMINI_MODEL": "gemini-2.5-flash"}), \
+         patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_response
+
+        res = await ai.ask_ai("Plan birthday")
+        assert res == '{"items": [{"id": "1", "item": "Cake", "cost": 100}], "buffer": 0, "total": 100, "ideas": []}'
+
+        assert mock_post.call_count == 1
+        call_args = mock_post.call_args
+        called_url = call_args[0][0]
+        called_headers = call_args[1]["headers"]
+        called_params = call_args[1]["params"]
+        called_payload = call_args[1]["json"]
+
+        # 1. Endpoint check
+        assert "generativelanguage.googleapis.com" in called_url
+        assert "v1beta/models/gemini-2.5-flash:generateContent" in called_url
+
+        # 2. Auth / Headers check
+        assert called_headers["x-goog-api-key"] == "test_gemini_key"
+        assert called_headers["Content-Type"] == "application/json"
+        assert called_params["key"] == "test_gemini_key"
+
+        # 3. Full Gemini structure check
+        assert "contents" in called_payload
+        assert isinstance(called_payload["contents"], list)
+        assert called_payload["contents"][0]["role"] == "user"
+        assert called_payload["contents"][0]["parts"][0]["text"] == "Plan birthday"
+
+        assert "system_instruction" in called_payload
+        assert called_payload["system_instruction"]["parts"][0]["text"] == ai.SYSTEM_PROMPT
+
+        assert "generationConfig" in called_payload
+        assert called_payload["generationConfig"]["temperature"] == 0.3
+        assert called_payload["generationConfig"]["responseMimeType"] == "application/json"
+
+
+@pytest.mark.asyncio
+async def test_ask_ai_missing_key():
+    """Verify ask_ai raises HTTP 500 when no Gemini API key is configured."""
+    with patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(HTTPException) as exc_info:
+            await ai.ask_ai("Hello")
+        assert exc_info.value.status_code == 500
+        assert "GEMINI_API_KEY is not configured" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_ask_ai_gemini_http_error():
+    """Verify ask_ai raises HTTP 502 when Gemini API returns an HTTP error."""
+    import httpx
+
+    mock_error_response = httpx.Response(
+        status_code=400,
+        text="Bad Request: invalid argument",
+        request=httpx.Request("POST", "https://test.url"),
+    )
+
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "test_key"}), \
+         patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_error_response
+
+        with pytest.raises(HTTPException) as exc_info:
+            await ai.ask_ai("Plan birthday")
+        assert exc_info.value.status_code == 502
+        assert "Gemini API returned HTTP 400" in exc_info.value.detail
+
+
+
 
 

@@ -1,117 +1,132 @@
 @import "tailwindcss";
 
-@layer base {
-  :root {
-    --font-serif: 'Lora', Georgia, serif;
-    --font-handwriting: 'Caveat', cursive;
-    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+@theme {
+  --font-serif: "Lora", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-    /* Light Mode: Warm Paper Texture */
-    --paper-bg: #fdfbf7;
-    --paper-card: #f9f6f0;
-    --paper-card-subtle: #f3eee3;
-    --paper-border: #e6decb;
-    --paper-line: rgba(180, 160, 130, 0.22);
-    --ink-primary: #2c2523;
-    --ink-secondary: #5a4e4a;
-    --ink-muted: #8b7d77;
-    --gold-accent: #c28835;
-
-    /* Priority Ribbon Colors */
-    --ribbon-p1: #dc2626;
-    --ribbon-p2: #ea580c;
-    --ribbon-p3: #2563eb;
-    --ribbon-p4: #6b7280;
-  }
-
-  .dark {
-    /* Dark Mode: Night ink on dark parchment */
-    --paper-bg: #151412;
-    --paper-card: #1f1d1a;
-    --paper-card-subtle: #292622;
-    --paper-border: #38342e;
-    --paper-line: rgba(140, 120, 100, 0.16);
-    --ink-primary: #ede8df;
-    --ink-secondary: #beb6a8;
-    --ink-muted: #8c8376;
-    --gold-accent: #d49a45;
-  }
+  /* Timezy Reference Colors */
+  --color-timezy-bg: #dcecd2;
+  --color-timezy-dark: #082b03;
+  --color-timezy-dark-hover: #051d02;
+  --color-timezy-card: #fbfdfa;
+  --color-timezy-subtle: #f4f8f2;
+  --color-timezy-green-light: #eaf3e7;
+  --color-timezy-border: #e2ebe0;
+  --color-timezy-muted: #5e7264;
 }
 
+:root {
+  font-family: 'Plus Jakarta Sans', 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #082b03;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Background wallpaper with exact matcha/sage green overlay and subtle diary texture */
 body {
   margin: 0;
-  font-family: var(--font-sans);
-  background-color: var(--paper-bg);
-  color: var(--ink-primary);
-  -webkit-font-smoothing: antialiased;
+  padding: 0;
+  background-color: #dcecd2;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(235, 246, 230, 0.6) 0%, rgba(220, 236, 210, 0.94) 70%, rgba(212, 230, 201, 0.98) 100%),
+    url('/diary-bg.jpg');
+  background-size: cover;
+  background-position: center top;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-blend-mode: normal, soft-light;
+  color: #082b03;
   min-height: 100vh;
 }
 
-/* Journal Typography Utilities */
-.font-serif-journal {
-  font-family: var(--font-serif);
-}
-
-.font-handwriting {
-  font-family: var(--font-handwriting);
-}
-
-/* Lined Paper Pattern for Note-taking */
-.journal-lined-paper {
-  background-color: var(--paper-card);
-  background-image: repeating-linear-gradient(
-    transparent,
-    transparent 1.95rem,
-    var(--paper-line) 1.95rem,
-    var(--paper-line) 2rem
-  );
-  line-height: 2rem;
-}
-
-/* Journal Book & Spread Shadows */
-.journal-shadow {
+/* Mobile Phone Frame / Mockup with ultra-crisp clean finish matching reference */
+.timezy-device {
+  background: linear-gradient(180deg, #edf4e7 0%, #f6faf2 18%, #fbfdfa 100%);
+  border-radius: 46px;
+  border: 8px solid #ffffff;
   box-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.07),
-    0 2px 4px -2px rgba(0, 0, 0, 0.05),
-    inset 0 0 40px rgba(180, 150, 100, 0.06);
-}
-
-.dark .journal-shadow {
-  box-shadow: 
-    0 8px 16px -2px rgba(0, 0, 0, 0.5),
-    0 4px 8px -2px rgba(0, 0, 0, 0.3),
-    inset 0 0 50px rgba(0, 0, 0, 0.4);
-}
-
-/* Book Spine / Page Fold Shadow on Two-Page Spread */
-.journal-spine-left {
-  box-shadow: inset -15px 0 20px -10px rgba(0, 0, 0, 0.06);
-}
-
-.dark .journal-spine-left {
-  box-shadow: inset -15px 0 25px -10px rgba(0, 0, 0, 0.4);
-}
-
-.journal-spine-right {
-  box-shadow: inset 15px 0 20px -10px rgba(0, 0, 0, 0.06);
-}
-
-.dark .journal-spine-right {
-  box-shadow: inset 15px 0 25px -10px rgba(0, 0, 0, 0.4);
-}
-
-/* Ribbon Bookmark effect */
-.ribbon-bookmark {
+    0 30px 70px -15px rgba(8, 43, 3, 0.16),
+    0 4px 16px rgba(8, 43, 3, 0.05),
+    inset 0 0 0 1px rgba(8, 43, 3, 0.04);
+  overflow: hidden;
   position: relative;
 }
-.ribbon-bookmark::after {
-  content: '';
-  position: absolute;
-  bottom: -8px;
-  left: 0;
-  width: 0;
-  height: 0;
-  border-left: 10px solid transparent;
-  border-right: 10px solid transparent;
-  border-top: 8px solid currentColor;
+
+/* Soft Cards matching reference */
+.timezy-card {
+  background: #ffffff;
+  border-radius: 22px;
+  border: 1px solid #e2ebe0;
+  box-shadow: 0 2px 8px -2px rgba(8, 43, 3, 0.04);
+}
+
+.timezy-subcard {
+  background: #f4f8f2;
+  border-radius: 20px;
+  border: 1px solid #e2ebe0;
+}
+
+/* Primary Dark Green Pill Button */
+.timezy-btn-dark {
+  background-color: #082b03;
+  color: #ffffff;
+  border-radius: 9999px;
+  font-weight: 700;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 6px 18px -3px rgba(8, 43, 3, 0.28);
+}
+.timezy-btn-dark:hover {
+  background-color: #051d02;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px -4px rgba(8, 43, 3, 0.38);
+}
+
+/* StPageFlip styling hooks */
+.stf__wrapper {
+  margin: 0 auto !important;
+  border-radius: 32px;
+}
+
+.stf__item {
+  background: #fbfdfa !important;
+  overflow: hidden !important;
+}
+
+.stf__shadow {
+  transition: opacity 0.3s ease !important;
+}
+
+.stf__corner-curl {
+  opacity: 0.85 !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  cursor: pointer !important;
+}
+.stf__corner-curl:hover {
+  opacity: 1 !important;
+  transform: scale(1.08) !important;
+}
+
+/* Smooth book page transitions */
+.page-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #edf4e7 0%, #f6faf2 14%, #fbfdfa 100%);
+  overflow: hidden;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #eef5eb;
+}
+::-webkit-scrollbar-thumb {
+  background: #bad4b6;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #082b03;
 }

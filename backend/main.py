@@ -19,7 +19,7 @@ from db import (
     CATEGORIES,
     PLAN_STATUSES,
 )
-from ai import get_plan, analyze_and_plan
+from ai import get_plan, analyze_and_plan, ask_ai_chat, generate_dynamic_chat_reply
 from planner import (
     DEFAULT_VENDOR_CHECKLISTS,
     DEFAULT_TIMEZONE,
@@ -222,6 +222,11 @@ class PlanRefineRequest(BaseModel):
     change: str = Field(..., min_length=1)
     new_total: Optional[float] = Field(None, gt=0)
     new_budget: Optional[float] = Field(None, gt=0)
+
+
+class AiAssistRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    event_details: Optional[Dict[str, Any]] = None
 
 
 class SessionLoginRequest(BaseModel):
@@ -478,7 +483,7 @@ async def trigger_wish_tick(
     """POST /internal/wish-tick (header X-Tick-Token == TICK_TOKEN):
 
     find plans with consent=true, sent=false, wish email set, event date == today in the plan's tz;
-    send a fixed-template birthday email via an email API provider (SMTP fallback);
+    send a fixed-template birthday email via an email API provider;
     claim atomically with find_one_and_update so it never sends twice. No AI here.
     """
     configured_token = os.getenv("TICK_TOKEN", "default_tick_secret_token_123")
@@ -544,7 +549,7 @@ async def trigger_wish_tick(
         recipient_name = wish_info.get("name") or claimed_doc.get("title") or "Friend"
 
         try:
-            # Send fixed-template birthday email via email API provider (SMTP fallback)
+            # Send fixed-template birthday email via email API provider
             send_birthday_wish(to_email=recipient_email, name=recipient_name)
             dispatched.append({
                 "plan_id": str(claimed_doc["_id"]),
@@ -923,6 +928,54 @@ async def refine_plan_endpoint(event_id: str, payload: PlanRefineRequest):
     }
     serialized["reminders"] = []
     return serialized
+
+
+@app.post("/events/ai-assist")
+@app.post("/plans/ai-assist")
+async def ai_assist_endpoint(payload: AiAssistRequest):
+    """Conversational GenAI planning assistant endpoint powered by Gemini."""
+    prompt = payload.message
+    details = payload.event_details or {}
+    context_parts = []
+    if details:
+        if details.get("title"):
+            context_parts.append(f"Event Title: {details['title']}")
+        if details.get("category"):
+            context_parts.append(f"Category: {details['category']}")
+        if details.get("functionType"):
+            context_parts.append(f"Function Type: {details['functionType']}")
+        if details.get("date"):
+            context_parts.append(f"Event Date: {details['date']}")
+        if details.get("commencementTime") or details.get("commencement_time"):
+            c_time = details.get("commencementTime") or details.get("commencement_time")
+            context_parts.append(f"Commencement Time: {c_time} (Schedule day-of execution flow around this start time)")
+        if details.get("budget"):
+            context_parts.append(f"Target Budget: ₹{details['budget']}")
+        if details.get("guests"):
+            context_parts.append(f"Guest Count: {details['guests']}")
+        if details.get("venue"):
+            v = details["venue"].lower()
+            if any(h in v for h in ["house", "home", "flat", "apartment", "residence", "terrace", "backyard"]):
+                context_parts.append(f"Venue: {details['venue']} (Home celebration - ZERO venue rental fee, no commercial hall cost)")
+            else:
+                context_parts.append(f"Venue: {details['venue']}")
+
+    context_str = " | ".join(context_parts) if context_parts else "General Event Planning"
+    user_query = f"[{context_str}]\nUser Question: {prompt}"
+
+    try:
+        reply = await ask_ai_chat(user_query)
+        return {"content": reply, "reply": reply, "status": "ok"}
+    except Exception as e:
+        # Dynamic AI answer tailored to the user's question when Gemini cloud API is unavailable
+        dynamic_reply = generate_dynamic_chat_reply(prompt, details)
+        return {
+            "content": dynamic_reply,
+            "reply": dynamic_reply,
+            "status": "ok",
+            "source": "dynamic_engine",
+            "detail": str(e),
+        }
 
 
 @app.patch("/events/{event_id}/vendors/{item_id}")

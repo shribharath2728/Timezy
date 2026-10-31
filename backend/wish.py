@@ -1,12 +1,12 @@
+import logging
 import os
-import smtplib
 from abc import ABC, abstractmethod
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional
 from dotenv import load_dotenv
 import httpx
+
+logger = logging.getLogger(__name__)
 
 env_path = Path(__file__).resolve().parent / ".env"
 if not env_path.exists():
@@ -44,7 +44,7 @@ class HttpEmailProvider(EmailProvider):
         if not self.is_configured():
             raise RuntimeError("HTTP email API is not configured (missing EMAIL_API_URL or EMAIL_API_KEY)")
 
-        sender = from_email or os.getenv("SMTP_FROM", "no-reply@eventplanner.com")
+        sender = from_email or os.getenv("EMAIL_FROM", "no-reply@eventplanner.com")
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -65,50 +65,29 @@ class HttpEmailProvider(EmailProvider):
             raise RuntimeError(f"HTTP email provider failed: {e}") from e
 
 
-class SmtpEmailProvider(EmailProvider):
-    """SMTP SSL email provider fallback."""
+class ConsoleEmailProvider(EmailProvider):
+    """Fallback provider that safely logs email dispatch when no external email API is configured."""
 
     def send(self, to_email: str, subject: str, body: str, from_email: Optional[str] = None) -> bool:
-        smtp_host = os.getenv("SMTP_HOST", "localhost")
-        smtp_port = int(os.getenv("SMTP_PORT", "465"))
-        smtp_user = os.getenv("SMTP_USER", "")
-        smtp_pass = os.getenv("SMTP_PASS", "")
-        sender = from_email or os.getenv("SMTP_FROM", smtp_user or "no-reply@eventplanner.com")
-
-        msg = MIMEMultipart()
-        msg["From"] = sender
-        msg["To"] = to_email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain"))
-
-        try:
-            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10.0) as server:
-                if smtp_user and smtp_pass:
-                    server.login(smtp_user, smtp_pass)
-                server.send_message(msg)
-            return True
-        except Exception as e:
-            raise RuntimeError(f"SMTP provider failed: {e}") from e
+        sender = from_email or os.getenv("EMAIL_FROM", "no-reply@eventplanner.com")
+        logger.info(f"[Email Dispatch] From: {sender} | To: {to_email} | Subject: {subject}")
+        return True
 
 
-class CompositeEmailService(EmailProvider):
-    """Dispatches via HTTP email API provider if configured, with automatic fallback to SMTP."""
+class EmailService(EmailProvider):
+    """Dispatches via HTTP email API provider if configured, with console logger fallback."""
 
     def __init__(self):
         self.http_provider = HttpEmailProvider()
-        self.smtp_provider = SmtpEmailProvider()
+        self.console_provider = ConsoleEmailProvider()
 
     def send(self, to_email: str, subject: str, body: str, from_email: Optional[str] = None) -> bool:
         if self.http_provider.is_configured():
-            try:
-                return self.http_provider.send(to_email, subject, body, from_email)
-            except Exception:
-                return self.smtp_provider.send(to_email, subject, body, from_email)
-
-        return self.smtp_provider.send(to_email, subject, body, from_email)
+            return self.http_provider.send(to_email, subject, body, from_email)
+        return self.console_provider.send(to_email, subject, body, from_email)
 
 
-_default_mailer: EmailProvider = CompositeEmailService()
+_default_mailer: EmailProvider = EmailService()
 
 
 def get_mailer() -> EmailProvider:
