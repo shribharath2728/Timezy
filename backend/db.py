@@ -1,21 +1,30 @@
-import os
+"""MongoDB connection and index management for Timezy.
+
+Uses PyMongo's native async client (pymongo >= 4.9, NOT Motor).
+A single module-level client is re-used across all requests; the loop-based
+key is kept for test isolation where a new event loop is created per test.
+"""
+
 import asyncio
-from typing import Optional, Dict, Any
-from pymongo import AsyncMongoClient, ASCENDING, IndexModel
+import os
+from typing import Optional
+
+from pymongo import AsyncMongoClient, ASCENDING
 
 import config
 
-MONGODB_URI = os.getenv("MONGODB_URI", config.MONGODB_URI)
-DB_NAME = os.getenv("DB_NAME", config.DB_NAME)
+MONGODB_URI: str = os.getenv("MONGODB_URI", config.MONGODB_URI)
+DB_NAME: str = os.getenv("DB_NAME", config.DB_NAME)
 
 CATEGORIES = ("birthday", "wedding", "meeting", "travel", "community")
 PLAN_STATUSES = ("draft", "scheduled")
 
+# Loop-keyed dict so each asyncio event loop (e.g. per-test) gets its own client.
 _clients: dict = {}
 
 
 def get_client() -> AsyncMongoClient:
-    """Returns loop-bound AsyncMongoClient (PyMongo >= 4.9, NOT Motor)."""
+    """Returns a loop-bound ``AsyncMongoClient``, creating one per event loop if needed."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -29,32 +38,35 @@ def get_client() -> AsyncMongoClient:
 
 
 def get_db():
-    client = get_client()
-    return client[DB_NAME]
+    """Returns the configured MongoDB database instance."""
+    return get_client()[DB_NAME]
 
 
 def get_users_collection():
-    """Users collection: google_id, email, tz, encrypted refresh token, created_at."""
+    """Users collection: google_id, email, tz, encrypted_refresh_token, created_at, updated_at."""
     return get_db()["users"]
 
 
 def get_plans_collection():
-    """Plans collection:
+    """Plans collection.
 
-    user_id, category, title, event_start UTC, tz, guests, budget, location, notes,
-    status draft|scheduled, items[], budget_plan, ideas, calendar_event_ids, sync_token,
-    wish{name,email,consent,sent}.
+    Fields: user_id, category, title, event_start (UTC), tz, guests, budget, location,
+    notes, status (draft|scheduled), items[], budget_plan, ideas, calendar_event_ids,
+    sync_token, wish{name, email, consent, sent}, created_at, updated_at.
     """
     return get_db()["plans"]
 
 
-async def init_db():
-    """Initializes indexes on users and plans collections."""
+async def init_db() -> None:
+    """Creates indexes on users and plans collections.
+
+    Safe to call multiple times — MongoDB silently skips existing indexes.
+    """
     db = get_db()
     users_col = db["users"]
     plans_col = db["plans"]
 
-    # 1. users: unique index on google_id and index on email
+    # ---- users indexes ----
     await users_col.create_index(
         [("google_id", ASCENDING)],
         unique=True,
@@ -66,30 +78,41 @@ async def init_db():
         name="users_email_idx",
     )
 
-    # 2. plans: index on user_id, category, event_start, and status
+    # ---- plans indexes ----
+    # Primary list query: user_id + category + status (compound covers all filter combos)
+    await plans_col.create_index(
+        [("user_id", ASCENDING), ("category", ASCENDING), ("status", ASCENDING)],
+        name="plans_user_category_status_idx",
+    )
+    # Dashboard next-event query: upcoming events sorted by start time
     await plans_col.create_index(
         [("user_id", ASCENDING), ("event_start", ASCENDING)],
         name="plans_user_event_start_idx",
     )
+    # Category-level time ordering (used without user filter for community/public views)
     await plans_col.create_index(
         [("category", ASCENDING), ("event_start", ASCENDING)],
         name="plans_category_event_start_idx",
     )
+    # Status-only filter
     await plans_col.create_index(
         [("status", ASCENDING)],
         name="plans_status_idx",
     )
+    # Wish-tick query: consent + sent + email (covers the full wish-tick candidate query)
     await plans_col.create_index(
-        [("wish.consent", ASCENDING), ("wish.sent", ASCENDING)],
-        name="plans_wish_consent_sent_idx",
+        [("wish.consent", ASCENDING), ("wish.sent", ASCENDING), ("wish.email", ASCENDING)],
+        name="plans_wish_consent_sent_email_idx",
     )
+    # Chronological creation order for pagination
     await plans_col.create_index(
         [("created_at", ASCENDING)],
         name="plans_created_at_idx",
     )
 
 
-async def close_db():
+async def close_db() -> None:
+    """Closes all active MongoDB client connections."""
     global _clients
     for client in list(_clients.values()):
         try:

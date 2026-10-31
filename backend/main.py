@@ -73,13 +73,22 @@ FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", config.FRONTEND_ORIGIN)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize PyMongo native async database indexes (users & plans)
+    """Application lifespan: initialize DB indexes on startup, close connections on shutdown."""
     await init_db()
     yield
+    from ai import close_http_client
+    await close_http_client()
     await close_db()
 
 
-app = FastAPI(title="Timezy Event Planner API", lifespan=lifespan)
+app = FastAPI(
+    title="Timezy Event Planner API",
+    lifespan=lifespan,
+    # Swagger UI and ReDoc are disabled in production.
+    # The nginx layer also blocks /docs and /openapi.json for additional protection.
+    docs_url=None if os.getenv("DISABLE_DOCS", "true").lower() in {"1", "true", "yes"} else "/docs",
+    redoc_url=None if os.getenv("DISABLE_DOCS", "true").lower() in {"1", "true", "yes"} else "/redoc",
+)
 
 # CORS strictly limited to FRONTEND_ORIGIN with credentials
 allowed_origins = [origin.strip() for origin in FRONTEND_ORIGIN.split(",") if origin.strip()]
@@ -87,8 +96,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Tick-Token", "Cookie"],
 )
 
 
@@ -433,7 +442,7 @@ async def trigger_wish_tick(
 
         try:
             # Send fixed-template birthday email via email API provider
-            send_birthday_wish(to_email=recipient_email, name=recipient_name)
+            await send_birthday_wish(to_email=recipient_email, name=recipient_name)
             dispatched.append({
                 "plan_id": str(claimed_doc["_id"]),
                 "email": recipient_email,
@@ -467,37 +476,54 @@ async def trigger_wish_tick(
 
 @app.get("/dashboard")
 async def get_dashboard(user: Optional[Dict[str, Any]] = Depends(get_current_user)):
-    """Returns aggregated summary data for dashboard screens."""
+    """Returns aggregated dashboard summary using MongoDB aggregation pipeline.
+
+    Uses $group + $sum to compute totals server-side instead of fetching all docs.
+    """
     plans_col = get_plans_collection()
     now_utc = datetime.now(timezone.utc)
 
-    query: Dict[str, Any] = {}
+    match_stage: Dict[str, Any] = {}
     if user:
-        query["user_id"] = str(user["_id"])
+        match_stage["user_id"] = str(user["_id"])
 
-    category_counts = {cat: 0 for cat in CATEGORIES}
-    plans_cursor = plans_col.find(query)
-    plans = await plans_cursor.to_list(length=500)
+    # --- Aggregation pipeline: total count, budget sum, per-category counts ---
+    pipeline: List[Dict[str, Any]] = [
+        {"$match": match_stage},
+        {
+            "$group": {
+                "_id": "$category",
+                "count": {"$sum": 1},
+                "total_budget": {"$sum": "$budget"},
+            }
+        },
+    ]
+    agg_cursor = plans_col.aggregate(pipeline)
+    agg_results = await agg_cursor.to_list(length=100)
 
+    category_counts: Dict[str, int] = {cat: 0 for cat in CATEGORIES}
     total_budget = 0.0
-    future_plans = []
-
-    for p in plans:
-        cat = p.get("category")
+    total_events = 0
+    for row in agg_results:
+        cat = row.get("_id")
+        cnt = row.get("count", 0)
         if cat in category_counts:
-            category_counts[cat] += 1
-        total_budget += float(p.get("budget", 0.0))
+            category_counts[cat] = cnt
+        total_events += cnt
+        total_budget += float(row.get("total_budget", 0.0))
 
-        start_dt = p.get("event_start")
-        if start_dt:
-            start_dt_utc = ensure_utc(start_dt) if isinstance(start_dt, str) else start_dt
-            if start_dt_utc >= now_utc:
-                future_plans.append((start_dt_utc, p))
+    # --- Fetch only the soonest upcoming event (sorted, limit 1) ---
+    next_event_cursor = plans_col.find(
+        {**match_stage, "event_start": {"$gte": now_utc}}
+    ).sort("event_start", 1).limit(1)
+    upcoming = await next_event_cursor.to_list(length=1)
 
     next_event = None
-    if future_plans:
-        future_plans.sort(key=lambda x: x[0])
-        earliest_dt, earliest_plan = future_plans[0]
+    if upcoming:
+        earliest_plan = upcoming[0]
+        earliest_dt = earliest_plan["event_start"]
+        if isinstance(earliest_dt, str):
+            earliest_dt = ensure_utc(earliest_dt)
         user_tz = earliest_plan.get("tz", DEFAULT_TIMEZONE)
         next_event = serialize_doc(earliest_plan, user_tz)
         seconds_diff = int((earliest_dt - now_utc).total_seconds())
@@ -506,7 +532,7 @@ async def get_dashboard(user: Optional[Dict[str, Any]] = Depends(get_current_use
         next_event["hours_remaining"] = (seconds_diff % 86400) // 3600
 
     return {
-        "total_events": len(plans),
+        "total_events": total_events,
         "total_budget": round(total_budget, 2),
         "category_counts": category_counts,
         "next_event": next_event,
@@ -540,17 +566,18 @@ async def create_plan(
     # 2. Determine items to classify
     raw_items = payload.user_items
     if not raw_items:
-        # Fall back to default checklist for category
-        raw_items = [dict(v) for v in DEFAULT_VENDOR_CHECKLISTS.get(category_val, [])]
+        # Fall back to default checklist for category (deep-copied to avoid mutation)
+        from planner import get_default_checklist
+        raw_items_dicts = get_default_checklist(category_val)
     else:
-        # Ensure all items have an id
-        cleaned = []
+        # Ensure all items have an id; convert VendorItemModel → plain dict
+        raw_items_dicts = []
         for idx, it in enumerate(raw_items):
-            item_copy = dict(it)
+            item_copy = it.model_dump(exclude_none=False)
             if not item_copy.get("id"):
                 item_copy["id"] = f"item_{idx + 1}"
-            cleaned.append(item_copy)
-        raw_items = cleaned
+            raw_items_dicts.append(item_copy)
+    raw_items = raw_items_dicts
 
     # 3. Runs AI analysis
     event_details = {
@@ -794,6 +821,7 @@ async def refine_plan_endpoint(event_id: str, payload: PlanRefineRequest):
             "budget_plan": new_ai_plan,
             "items": existing_items,
             "ideas": new_ai_plan.get("ideas", doc.get("ideas", [])),
+            "updated_at": datetime.now(timezone.utc),
         }},
     )
 
@@ -925,7 +953,7 @@ async def patch_plan_item(
 
     await plans_col.update_one(
         {"_id": doc["_id"]},
-        {"$set": {"items": items}},
+        {"$set": {"items": items, "updated_at": datetime.now(timezone.utc)}},
     )
 
     return {
@@ -969,13 +997,15 @@ async def schedule_plan(
 
     calendar_event_ids = list(doc.get("calendar_event_ids", []))
     items = doc.get("items", [])
+    scheduling_errors: List[str] = []
 
     # Fetch busy blocks if authenticated with Google Calendar
     busy_list = []
     if user_with_token and user_with_token.get("encrypted_refresh_token"):
         try:
             busy_list = await busy_blocks(user_with_token, now_utc, event_start_utc)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Could not fetch busy blocks for plan %s: %s", event_id, exc)
             busy_list = []
 
     # 1. Schedule items
@@ -1034,8 +1064,10 @@ async def schedule_plan(
                         "start": slot_start.isoformat(),
                         "end": slot_end.isoformat(),
                     })
-            except Exception:
-                pass
+            except Exception as exc:
+                err_msg = f"Item '{it.get('item')}': {exc}"
+                logger.warning("Google Calendar create_event failed for plan %s — %s", event_id, err_msg)
+                scheduling_errors.append(err_msg)
 
         it["scheduled_start"] = slot_start.isoformat()
         it["scheduled_end"] = slot_end.isoformat()
@@ -1058,8 +1090,10 @@ async def schedule_plan(
             if main_gcal and "id" in main_gcal:
                 main_event_id = main_gcal["id"]
                 calendar_event_ids.append(main_event_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            err_msg = f"Main event: {exc}"
+            logger.warning("Google Calendar main event create failed for plan %s — %s", event_id, err_msg)
+            scheduling_errors.append(err_msg)
 
     # 3. Store event ids and set status scheduled
     await plans_col.update_one(
@@ -1068,6 +1102,7 @@ async def schedule_plan(
             "status": "scheduled",
             "items": items,
             "calendar_event_ids": calendar_event_ids,
+            "updated_at": datetime.now(timezone.utc),
         }},
     )
 
@@ -1078,5 +1113,7 @@ async def schedule_plan(
     serialized = serialize_doc(doc, user_tz)
     serialized["scheduled"] = True
     serialized["calendar_event_ids"] = calendar_event_ids
+    serialized["calendar_events_created"] = len(calendar_event_ids)
+    serialized["scheduling_errors"] = scheduling_errors
     return serialized
 

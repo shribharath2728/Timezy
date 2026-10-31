@@ -2,8 +2,8 @@ import { AiMessage, AiSuggestion, BudgetItem, ChecklistItem, EventPlan, Timeline
 import { isHomeVenue, offsetTime, generateDaySchedule } from './defaultPlanGenerator';
 
 export async function askAiAssistant(
-  prompt: string, 
-  plan?: EventPlan | null, 
+  prompt: string,
+  plan?: EventPlan | null,
   _history?: AiMessage[]
 ): Promise<AiMessage> {
   try {
@@ -13,9 +13,7 @@ export async function askAiAssistant(
     const payloadBody: {
       message: string;
       event_details?: Record<string, unknown>;
-    } = {
-      message: prompt,
-    };
+    } = { message: prompt };
 
     if (plan) {
       payloadBody.event_details = {
@@ -42,20 +40,27 @@ export async function askAiAssistant(
       const data = await res.json();
       const content = data.reply || data.content;
       if (content && typeof content === 'string' && content.trim()) {
-        const generated = generateEventAdvice(prompt, plan);
+        // Backend replied successfully — return directly without calling the local fallback
         return {
           id: `ai-${Date.now()}`,
           role: 'assistant',
-          content: content,
+          content,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          suggestions: generated.suggestions || [],
+          suggestions: [],
         };
       }
+    } else {
+      console.warn(`[aiService] Backend returned ${res.status} — falling back to local engine`);
     }
-  } catch {
-    // Client-side fallback handler
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.warn('[aiService] Request timed out after 12 s — falling back to local engine');
+    } else {
+      console.error('[aiService] Fetch error:', err);
+    }
   }
 
+  // Local fallback: generate a contextual reply without network access
   return generateEventAdvice(prompt, plan);
 }
 

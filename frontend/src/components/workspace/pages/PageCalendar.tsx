@@ -18,6 +18,8 @@ export const PageCalendar = React.forwardRef<HTMLDivElement, {
     const sundayDate = new Date(eventDateObj);
     sundayDate.setDate(eventDateObj.getDate() - dayOfWeek);
 
+    // Fix: use props.plan.eventDate as dep (not the derived sundayDate object which
+    // has a new reference every render, making useMemo effectively a no-op)
     const days = React.useMemo(() => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, index) => {
       const currentDay = new Date(sundayDate);
       currentDay.setDate(sundayDate.getDate() + index);
@@ -28,7 +30,8 @@ export const PageCalendar = React.forwardRef<HTMLDivElement, {
         dateStr: curIso,
         active: curIso === props.plan.eventDate,
       };
-    }), [sundayDate, props.plan.eventDate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [props.plan.eventDate]);
 
     // Dynamic schedule calculated contextually from event category, time & venue
     const initialSchedule = (props.plan.daySchedule && props.plan.daySchedule.length > 0)
@@ -37,18 +40,25 @@ export const PageCalendar = React.forwardRef<HTMLDivElement, {
 
     const [milestones, setMilestones] = useState<ScheduleMilestone[]>(initialSchedule);
     const [showAdd, setShowAdd] = useState(false);
-    const [newTitle, setNewTitle] = useState('');
-    const [newTime, setNewTime] = useState('');
-    const [newDuration, setNewDuration] = useState('');
 
+    // Keep local milestones in sync when parent plan updates (e.g. AI adds a milestone)
     React.useEffect(() => {
       if (props.plan.daySchedule && props.plan.daySchedule.length > 0) {
         setMilestones(props.plan.daySchedule);
       } else {
-        const generated = generateDaySchedule(props.plan.category, props.plan.functionType, props.plan.commencementTime, props.plan.venue);
+        const generated = generateDaySchedule(
+          props.plan.category,
+          props.plan.functionType,
+          props.plan.commencementTime,
+          props.plan.venue,
+        );
         setMilestones(generated);
       }
-    }, [props.plan.id, props.plan.category, props.plan.functionType, props.plan.commencementTime, props.plan.venue]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [props.plan.id, props.plan.category, props.plan.functionType, props.plan.commencementTime, props.plan.venue, props.plan.daySchedule]);
+    const [newTitle, setNewTitle] = useState('');
+    const [newTime, setNewTime] = useState('');
+    const [newDuration, setNewDuration] = useState('');
 
     const handleAddMilestone = (e: React.FormEvent) => {
       e.preventDefault();

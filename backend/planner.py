@@ -1,19 +1,28 @@
-from datetime import datetime, timezone, timedelta, time
+"""Pure planning utilities for Timezy: timezone conversion, free-slot discovery, and defaults.
+
+No AI calls or database access here — all functions are deterministic and independently testable.
+"""
+
+import copy
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Optional, Tuple, Union
 from zoneinfo import ZoneInfo
-from typing import List, Dict, Any, Union, Optional, Tuple
+
 from fastapi import HTTPException, status
 
 DEFAULT_TIMEZONE = "Asia/Kolkata"
 
-# Working hours in user timezone: 09:00 - 20:00
+# Working hours in user timezone: 09:00 – 20:00
 DEFAULT_WORK_START_HOUR = 9
 DEFAULT_WORK_END_HOUR = 20
 
-# Priority P1-P4 -> Google Calendar colorId and reminder overrides
-# P1: email 10080 + popup 1440 + popup 120 (colorId: 11 - Red)
-# P2: email 4320 + popup 1440 (colorId: 6 - Orange)
-# P3: popup 1440 (colorId: 7 - Blue)
-# P4: popup 0 (colorId: 8 - Gray)
+# ---------------------------------------------------------------------------
+# Priority P1–P4 → Google Calendar colorId and reminder overrides
+# P1: email 10080 + popup 1440 + popup 120  (colorId: 11 – Red)
+# P2: email 4320 + popup 1440               (colorId:  6 – Orange)
+# P3: popup 1440                            (colorId:  7 – Blue)
+# P4: popup 0                              (colorId:  8 – Gray)
+# ---------------------------------------------------------------------------
 PRIORITY_GCAL_CONFIG: Dict[str, Dict[str, Any]] = {
     "P1": {
         "colorId": "11",
@@ -56,7 +65,9 @@ PRIORITY_GCAL_CONFIG: Dict[str, Dict[str, Any]] = {
     },
 }
 
-DEFAULT_VENDOR_CHECKLISTS: Dict[str, List[Dict[str, Any]]] = {
+# Deep-copied on every access via ``get_default_checklist()`` to prevent callers from
+# accidentally mutating the module-level template.
+_DEFAULT_VENDOR_CHECKLISTS: Dict[str, List[Dict[str, Any]]] = {
     "birthday": [
         {"id": "b_1", "item": "Birthday cake and bakery", "cost": 5000, "lead_days": 3, "priority": "P1", "done": False},
         {"id": "b_2", "item": "Party decorations and balloons", "cost": 3000, "lead_days": 2, "priority": "P2", "done": False},
@@ -95,42 +106,105 @@ DEFAULT_VENDOR_CHECKLISTS: Dict[str, List[Dict[str, Any]]] = {
     ],
 }
 
+# Public read-only view kept for backward compatibility with existing imports.
+DEFAULT_VENDOR_CHECKLISTS = _DEFAULT_VENDOR_CHECKLISTS
+
+
+def get_default_checklist(category: str) -> List[Dict[str, Any]]:
+    """Returns a deep copy of the default vendor checklist for *category*.
+
+    Always returns a copy so callers cannot mutate the module-level template.
+    Returns an empty list for unknown categories.
+    """
+    return copy.deepcopy(_DEFAULT_VENDOR_CHECKLISTS.get(category, []))
+
+
+# ---------------------------------------------------------------------------
+# Timezone helpers
+# ---------------------------------------------------------------------------
 
 def ensure_utc(dt: Union[datetime, str], tz_str: str = DEFAULT_TIMEZONE) -> datetime:
-    """Converts a datetime (or ISO string) into a timezone-aware UTC datetime.
-    If naive, assumes it is in the given user timezone (default Asia/Kolkata).
+    """Converts a datetime or ISO string to a timezone-aware UTC datetime.
+
+    Parsing rules:
+    - If *dt* is already a ``datetime`` with tzinfo, it is converted to UTC directly.
+    - If *dt* is naive, it is assumed to be in *tz_str* (default ``Asia/Kolkata``).
+    - Bare date strings (e.g. ``"2026-11-15"``) are interpreted as midnight in *tz_str*.
+
+    Args:
+        dt: A ``datetime`` object or ISO-8601 string (with or without time component).
+        tz_str: IANA timezone name to assume when *dt* is naive or date-only.
+
+    Returns:
+        A timezone-aware ``datetime`` normalised to UTC.
     """
     if isinstance(dt, str):
         try:
             dt = datetime.fromisoformat(dt)
         except ValueError:
+            # Bare date string "YYYY-MM-DD" → midnight in user tz
             dt = datetime.strptime(dt, "%Y-%m-%d")
 
     if dt.tzinfo is None:
-        user_tz = ZoneInfo(tz_str)
-        dt = dt.replace(tzinfo=user_tz)
+        dt = dt.replace(tzinfo=ZoneInfo(tz_str))
 
     return dt.astimezone(timezone.utc)
 
 
 def to_user_timezone(dt_utc: datetime, tz_str: str = DEFAULT_TIMEZONE) -> datetime:
-    """Converts a timezone-aware UTC datetime to the user's IANA timezone."""
+    """Converts a timezone-aware UTC ``datetime`` to the given IANA timezone.
+
+    Args:
+        dt_utc: A UTC ``datetime`` (naive datetimes are treated as UTC).
+        tz_str: Target IANA timezone name (default ``Asia/Kolkata``).
+
+    Returns:
+        A timezone-aware ``datetime`` in *tz_str*.
+    """
     if dt_utc.tzinfo is None:
         dt_utc = dt_utc.replace(tzinfo=timezone.utc)
     return dt_utc.astimezone(ZoneInfo(tz_str))
 
 
-def format_for_display(dt_utc: datetime, tz_str: str = DEFAULT_TIMEZONE) -> str:
-    """Formats a UTC datetime in the user's timezone as an ISO string."""
+def format_for_display(
+    dt_utc: Optional[datetime], tz_str: str = DEFAULT_TIMEZONE
+) -> Optional[str]:
+    """Formats a UTC ``datetime`` as an ISO string in the user's timezone.
+
+    Args:
+        dt_utc: UTC ``datetime`` to format. Returns ``None`` when *dt_utc* is ``None``.
+        tz_str: Target IANA timezone name (default ``Asia/Kolkata``).
+
+    Returns:
+        ISO-8601 string in the user's local timezone, or ``None`` if *dt_utc* is ``None``.
+    """
+    if dt_utc is None:
+        return None
     return to_user_timezone(dt_utc, tz_str).isoformat()
 
 
 # ---------------------------------------------------------------------------
-# Planner Validation & Free Slot Discovery (Pure Code, No AI)
+# Validation
 # ---------------------------------------------------------------------------
 
-def validate_event_start(event_start_utc: datetime, tz_str: str = DEFAULT_TIMEZONE, now_utc: Optional[datetime] = None) -> datetime:
-    """Validate event_start >= now+1h in user tz (reject past dates). Raises 400 if invalid."""
+def validate_event_start(
+    event_start_utc: datetime,
+    tz_str: str = DEFAULT_TIMEZONE,
+    now_utc: Optional[datetime] = None,
+) -> datetime:
+    """Validates that *event_start_utc* is at least 1 hour in the future.
+
+    Args:
+        event_start_utc: Proposed event start time in UTC.
+        tz_str: User's IANA timezone (used only for the error message).
+        now_utc: Override for current time (useful in tests). Defaults to ``datetime.now(UTC)``.
+
+    Returns:
+        *event_start_utc* unchanged when valid.
+
+    Raises:
+        HTTPException(400): When the event start is less than 1 hour in the future.
+    """
     if now_utc is None:
         now_utc = datetime.now(timezone.utc)
 
@@ -144,10 +218,16 @@ def validate_event_start(event_start_utc: datetime, tz_str: str = DEFAULT_TIMEZO
 
 
 def get_priority_config(priority: str) -> Dict[str, Any]:
-    """Returns Google Calendar colorId and reminder overrides for P1-P4."""
-    p = str(priority).upper()
-    return PRIORITY_GCAL_CONFIG.get(p, PRIORITY_GCAL_CONFIG["P1"])
+    """Returns Google Calendar colorId and reminder overrides for P1–P4.
 
+    Falls back to P1 config for unknown priority strings.
+    """
+    return PRIORITY_GCAL_CONFIG.get(str(priority).upper(), PRIORITY_GCAL_CONFIG["P1"])
+
+
+# ---------------------------------------------------------------------------
+# Free-slot discovery
+# ---------------------------------------------------------------------------
 
 def find_free_slot(
     target_dt_utc: datetime,
@@ -159,10 +239,24 @@ def find_free_slot(
     work_start_hour: int = DEFAULT_WORK_START_HOUR,
     work_end_hour: int = DEFAULT_WORK_END_HOUR,
 ) -> Optional[Tuple[datetime, datetime]]:
-    """Finds free slots in working hours (default 09:00-20:00 user tz, default 30-min duration)
+    """Finds the earliest free working-hours slot for a planning task.
 
-    using busy_blocks, never before now, never after the event.
-    If target date is in the past, clamps to the next free slot.
+    Searches day-by-day from *target_dt_utc* (clamped to ``now + 15 min`` when in
+    the past) up to *event_start_utc*, never scheduling past the event itself.
+
+    Args:
+        target_dt_utc: Ideal start time (usually ``event_start − lead_days``).
+        event_start_utc: Hard deadline — slots must end before this time.
+        tz_str: User's IANA timezone used to determine working hours.
+        duration_minutes: Required slot duration in minutes (default 30).
+        busy_list: List of ``{"start": ISO, "end": ISO}`` dicts representing blocked times.
+        now_utc: Override for current time (useful in tests).
+        work_start_hour: Start of working day in user tz (default 9).
+        work_end_hour: End of working day in user tz (default 20).
+
+    Returns:
+        ``(slot_start_utc, slot_end_utc)`` tuple, or ``None`` when no free slot exists
+        within the search window.
     """
     if now_utc is None:
         now_utc = datetime.now(timezone.utc)
@@ -170,28 +264,29 @@ def find_free_slot(
     user_tz = ZoneInfo(tz_str)
     duration = timedelta(minutes=duration_minutes)
 
-    # Convert busy_list strings into UTC datetime tuples (start, end)
+    # Parse busy intervals once, sorted for efficient skipping
     parsed_busy: List[Tuple[datetime, datetime]] = []
     if busy_list:
         for b in busy_list:
-            b_start = b.get("start")
-            b_end = b.get("end")
-            if b_start and b_end:
+            b_start_str = b.get("start")
+            b_end_str = b.get("end")
+            if b_start_str and b_end_str:
                 try:
-                    dt_s = ensure_utc(b_start, tz_str)
-                    dt_e = ensure_utc(b_end, tz_str)
-                    parsed_busy.append((dt_s, dt_e))
+                    parsed_busy.append((
+                        ensure_utc(b_start_str, tz_str),
+                        ensure_utc(b_end_str, tz_str),
+                    ))
                 except Exception:
                     pass
+    parsed_busy.sort(key=lambda x: x[0])
 
-    # Start search from target date, or now + 15m if target is in the past (clamping)
+    # Clamp search start to at least now + 15 min
     search_start = max(target_dt_utc, now_utc + timedelta(minutes=15))
 
-    # Iterate day by day from search_start up to event_start_utc
     curr_local = to_user_timezone(search_start, tz_str)
     event_local = to_user_timezone(event_start_utc, tz_str)
 
-    # Limit search to 30 days or event start
+    # Search up to 30 days or until event date (whichever is sooner)
     max_days = min(30, max(1, (event_local.date() - curr_local.date()).days + 1))
 
     for day_offset in range(max_days):
@@ -199,30 +294,26 @@ def find_free_slot(
         if day_date > event_local.date():
             break
 
-        # Define working hours on this day
-        day_work_start_local = datetime(
-            day_date.year, day_date.month, day_date.day, work_start_hour, 0, 0, tzinfo=user_tz
-        )
-        day_work_end_local = datetime(
-            day_date.year, day_date.month, day_date.day, work_end_hour, 0, 0, tzinfo=user_tz
-        )
+        day_work_start_utc = datetime(
+            day_date.year, day_date.month, day_date.day,
+            work_start_hour, 0, 0, tzinfo=user_tz,
+        ).astimezone(timezone.utc)
+        day_work_end_utc = datetime(
+            day_date.year, day_date.month, day_date.day,
+            work_end_hour, 0, 0, tzinfo=user_tz,
+        ).astimezone(timezone.utc)
 
-        day_work_start_utc = day_work_start_local.astimezone(timezone.utc)
-        day_work_end_utc = day_work_end_local.astimezone(timezone.utc)
-
-        # Candidate slot start: at least search_start
         slot_candidate = max(day_work_start_utc, search_start)
 
         while slot_candidate + duration <= day_work_end_utc and slot_candidate + duration <= event_start_utc:
             slot_end = slot_candidate + duration
 
-            # Check overlap with parsed_busy
             is_busy = False
             for b_s, b_e in parsed_busy:
-                # Overlap condition: max(slot_candidate, b_s) < min(slot_end, b_e)
+                # Overlap: max(slot_start, busy_start) < min(slot_end, busy_end)
                 if max(slot_candidate, b_s) < min(slot_end, b_e):
                     is_busy = True
-                    # Jump forward to end of busy block
+                    # Jump to end of this busy block
                     slot_candidate = max(slot_candidate + timedelta(minutes=15), b_e)
                     break
 

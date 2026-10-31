@@ -1,0 +1,12 @@
+# Exclude everything not needed at runtime
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+tests/
+.env
+*.env
+requirements-dev.txt
+.coverage
+htmlcov/

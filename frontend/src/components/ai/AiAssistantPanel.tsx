@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Sparkles, Send, Plus, CheckCircle } from 'lucide-react';
 import { AiMessage, AiSuggestion, BudgetItem, ChecklistItem, EventPlan, TimelineTask } from '../../types';
 import { askAiAssistant } from '../../services/aiService';
@@ -38,13 +38,23 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
   onAddChecklistItem,
   onUpdateTheme,
 }) => {
-  const planTitle = plan ? plan.title : null;
+  const planTitle = plan?.title ?? null;
+
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [addedSuggestionIds, setAddedSuggestionIds] = useState<Set<string>>(new Set());
+  const [addedSuggestionIds, setAddedSuggestionIds] = useState<Record<string, boolean>>({});
 
+  // Ref for auto-scrolling to the latest message
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Ref to track whether the panel has been opened at least once for this plan
+  const prevPlanTitleRef = useRef<string | null>(null);
+
+  // Reset conversation ONLY when the active plan changes (not on every open/close toggle)
   useEffect(() => {
+    if (prevPlanTitleRef.current === planTitle) return;
+    prevPlanTitleRef.current = planTitle;
+
     const welcome = planTitle
       ? `Welcome to your event planning assistant for **${planTitle}**.\n\nHow can I help with your preparations today? Choose a quick action below or ask any question about themes, budget allocations, or vendor schedules in Indian Rupees (₹).`
       : `Welcome to the **Timezy** AI Assistant!\n\nI am here to help you brainstorm themes, design budgets in Indian Rupees (₹), and organize memorable timelines. You can ask me any question or pick a quick topic below.`;
@@ -55,14 +65,22 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
       content: welcome,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     }]);
-  }, [planTitle, isOpen]);
+    setAddedSuggestionIds({});
+  }, [planTitle]);
+
+  // Auto-scroll to the bottom whenever new messages are added
+  useEffect(() => {
+    if (isOpen && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages, isLoading, isOpen]);
 
   if (!isOpen) return null;
 
   const quickActions = plan ? PLAN_ACTIONS : GENERAL_ACTIONS;
 
   const handleSend = async (textToSend?: string) => {
-    const query = (textToSend || input).trim();
+    const query = (textToSend ?? input).trim();
     if (!query || isLoading) return;
 
     const userMsg: AiMessage = {
@@ -79,7 +97,8 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     try {
       const aiReply = await askAiAssistant(query, plan, messages);
       setMessages((prev) => [...prev, aiReply]);
-    } catch {
+    } catch (err) {
+      console.error('[AiAssistantPanel] handleSend error:', err);
       setMessages((prev) => [
         ...prev,
         {
@@ -95,35 +114,43 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
   };
 
   const handleApplySuggestion = (sug: AiSuggestion) => {
-    if (addedSuggestionIds.has(sug.id)) return;
-    if (sug.type === 'budget' && onAddBudgetItem) onAddBudgetItem(sug.data as BudgetItem);
-    else if (sug.type === 'timeline' && onAddTimelineTask) onAddTimelineTask(sug.data as TimelineTask);
-    else if (sug.type === 'checklist' && onAddChecklistItem) onAddChecklistItem(sug.data as ChecklistItem);
-    else if (sug.type === 'theme' && onUpdateTheme) onUpdateTheme((sug.data as { theme: string }).theme);
-    setAddedSuggestionIds((prev) => new Set([...prev, sug.id]));
+    if (addedSuggestionIds[sug.id]) return;
+    try {
+      if (sug.type === 'budget' && onAddBudgetItem) onAddBudgetItem(sug.data as BudgetItem);
+      else if (sug.type === 'timeline' && onAddTimelineTask) onAddTimelineTask(sug.data as TimelineTask);
+      else if (sug.type === 'checklist' && onAddChecklistItem) onAddChecklistItem(sug.data as ChecklistItem);
+      else if (sug.type === 'theme' && onUpdateTheme) onUpdateTheme((sug.data as { theme: string }).theme);
+      setAddedSuggestionIds((prev) => ({ ...prev, [sug.id]: true }));
+    } catch (err) {
+      console.error('[AiAssistantPanel] handleApplySuggestion error:', err);
+    }
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-full sm:w-[420px] z-50 flex flex-col bg-white border-l border-[#e2ede0] shadow-2xl no-print">
-      
+    <div
+      className="fixed inset-y-0 right-0 w-full sm:w-[420px] z-50 flex flex-col bg-white border-l border-[#e2ede0] shadow-2xl no-print"
+      role="dialog"
+      aria-label="AI Event Planning Assistant"
+      aria-modal="true"
+    >
       {/* Header */}
       <div className="px-5 py-4 border-b border-[#e2ede0] flex items-center justify-between bg-[#f4f8f2]">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-[#113425] flex items-center justify-center text-white">
+          <div className="w-8 h-8 rounded-full bg-[#113425] flex items-center justify-center text-white" aria-hidden="true">
             <Sparkles className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="font-bold text-sm text-[#113425] leading-tight">
-              AI Event Assistant
-            </h3>
+            <h3 className="font-bold text-sm text-[#113425] leading-tight">AI Event Assistant</h3>
             <span className="text-[11px] text-[#6b7f73] font-mono">
               {plan ? `Tailored for ${plan.title}` : 'General Planning Advice'}
             </span>
           </div>
         </div>
-        <button onClick={onClose}
+        <button
+          onClick={onClose}
           className="p-1.5 rounded-full text-[#6b7f73] hover:text-[#113425] hover:bg-[#eaf5e6] transition-colors"
-          aria-label="Close">
+          aria-label="Close AI assistant"
+        >
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -131,15 +158,19 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
       {/* Quick action chips */}
       <div className="px-4 py-2.5 border-b border-[#e2ede0] bg-white overflow-x-auto whitespace-nowrap space-x-1.5">
         {quickActions.map((action) => (
-          <button key={action} onClick={() => handleSend(action)} disabled={isLoading}
-            className="inline-block px-3 py-1 rounded-full text-[11px] font-semibold bg-[#f4f8f2] text-[#113425] border border-[#e2ede0] hover:bg-[#eaf5e6] transition-all disabled:opacity-40">
+          <button
+            key={action}
+            onClick={() => handleSend(action)}
+            disabled={isLoading}
+            className="inline-block px-3 py-1 rounded-full text-[11px] font-semibold bg-[#f4f8f2] text-[#113425] border border-[#e2ede0] hover:bg-[#eaf5e6] transition-all disabled:opacity-40"
+          >
             {action}
           </button>
         ))}
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4" role="log" aria-live="polite" aria-label="Conversation">
         {messages.map((m) => {
           const isUser = m.role === 'user';
           return (
@@ -157,22 +188,33 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
                       Suggested Actions:
                     </span>
                     {m.suggestions.map((sug) => {
-                      const isAdded = addedSuggestionIds.has(sug.id);
+                      const isAdded = !!addedSuggestionIds[sug.id];
                       return (
                         <div key={sug.id}
-                          className="p-2.5 rounded-xl bg-white border border-[#e2ede0] flex flex-col gap-1 text-[11px] shadow-2xs">
+                          className="p-2.5 rounded-xl bg-white border border-[#e2ede0] flex flex-col gap-1 text-[11px] shadow-2xs"
+                        >
                           <div className="text-[#113425] font-bold flex items-center justify-between">
                             <span>{sug.title}</span>
-                            <span className="text-[9px] font-mono text-[#113425] uppercase px-1.5 py-0.5 rounded-full bg-[#eaf5e6]">{sug.type}</span>
+                            <span className="text-[9px] font-mono text-[#113425] uppercase px-1.5 py-0.5 rounded-full bg-[#eaf5e6]">
+                              {sug.type}
+                            </span>
                           </div>
                           <p className="text-[10px] text-[#6b7f73]">{sug.description}</p>
                           {plan && (
                             <div className="pt-1 flex justify-end">
-                              <button type="button" onClick={() => handleApplySuggestion(sug)} disabled={isAdded}
+                              <button
+                                type="button"
+                                onClick={() => handleApplySuggestion(sug)}
+                                disabled={isAdded}
+                                aria-label={isAdded ? 'Already added' : `Add ${sug.title} to plan`}
                                 className={`px-2.5 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 transition-all ${
                                   isAdded ? 'bg-[#f4f8f2] text-[#6b7f73] cursor-default' : 'timezy-btn-dark'
-                                }`}>
-                                {isAdded ? <><CheckCircle className="w-3 h-3" /><span>Added</span></> : <><Plus className="w-3 h-3" /><span>Add to Plan</span></>}
+                                }`}
+                              >
+                                {isAdded
+                                  ? <><CheckCircle className="w-3 h-3" aria-hidden="true" /><span>Added</span></>
+                                  : <><Plus className="w-3 h-3" aria-hidden="true" /><span>Add to Plan</span></>
+                                }
                               </button>
                             </div>
                           )}
@@ -189,23 +231,37 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
 
         {isLoading && (
           <div className="p-3 rounded-2xl bg-[#f4f8f2] border border-[#e2ede0] text-[11px] text-[#6b7f73] font-mono animate-pulse flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5 text-[#113425]" />
+            <Sparkles className="w-3.5 h-3.5 text-[#113425]" aria-hidden="true" />
             <span>Thinking...</span>
           </div>
         )}
+
+        {/* Scroll anchor — auto-scroll target */}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
-      <form onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-        className="p-3 border-t border-[#e2ede0] flex items-center gap-2 bg-[#f8faf7]">
-        <input type="text"
-          placeholder={plan ? "Ask about themes, budget in ₹, checklists..." : "Ask anything about event planning..."}
-          value={input} onChange={(e) => setInput(e.target.value)} disabled={isLoading}
-          className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-[#e2ede0] text-xs focus:outline-none text-[#113425]" />
-        <button type="submit" disabled={!input.trim() || isLoading}
+      <form
+        onSubmit={(e) => { e.preventDefault(); handleSend(); }}
+        className="p-3 border-t border-[#e2ede0] flex items-center gap-2 bg-[#f8faf7]"
+      >
+        <label htmlFor="ai-input" className="sr-only">Ask the AI assistant</label>
+        <input
+          id="ai-input"
+          type="text"
+          placeholder={plan ? 'Ask about themes, budget in ₹, checklists...' : 'Ask anything about event planning...'}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          disabled={isLoading}
+          className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-[#e2ede0] text-xs focus:outline-none focus:border-[#113425] text-[#113425]"
+        />
+        <button
+          type="submit"
+          disabled={!input.trim() || isLoading}
           className="timezy-btn-dark p-2.5 rounded-xl disabled:opacity-40 transition-all shrink-0"
-          aria-label="Send">
-          <Send className="w-3.5 h-3.5 text-white" />
+          aria-label="Send message"
+        >
+          <Send className="w-3.5 h-3.5 text-white" aria-hidden="true" />
         </button>
       </form>
     </div>
