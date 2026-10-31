@@ -32,7 +32,3 @@ services:
 
 volumes:
   mongo_data:
-
-
-volumes:
-  mongo_data:
